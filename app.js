@@ -1370,6 +1370,80 @@ function cloudUrl(path) {
   return `${readCloudConfig().url}${path}`;
 }
 
+function authCallbackParams() {
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : '');
+  const hasAuthCallback = ['access_token', 'refresh_token', 'error', 'error_code', 'error_description']
+    .some((key) => params.has(key));
+  if (!hasAuthCallback) return null;
+
+  // Supabase returns the confirmation session in the URL fragment. Remove it
+  // immediately so tokens do not remain visible in the address bar or history.
+  window.history.replaceState({}, document.title, `${url.pathname}${url.search}`);
+  return params;
+}
+
+function sessionFromAuthCallback(params, user) {
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  if (!accessToken || !refreshToken || !user?.id) return null;
+
+  const expiresAt = Number(params.get('expires_at'));
+  const expiresIn = Number(params.get('expires_in'));
+  return {
+    accessToken,
+    refreshToken,
+    user: { id: user.id, email: user.email || '' },
+    expiresAt: Number.isFinite(expiresAt)
+      ? expiresAt * 1000
+      : Date.now() + (Number.isFinite(expiresIn) ? expiresIn : 3600) * 1000,
+  };
+}
+
+async function restoreCloudSessionFromAuthCallback() {
+  const params = authCallbackParams();
+  if (!params) return false;
+
+  const authError = params.get('error_description') || params.get('error');
+  if (authError) {
+    recordCloudActivity(`邮箱验证失败：${authError}`, 'error');
+    showToast(`邮箱验证失败：${authError}`);
+    return true;
+  }
+
+  const config = readCloudConfig();
+  const accessToken = params.get('access_token');
+  if (!isCloudConfigured(config) || !accessToken) {
+    recordCloudActivity('邮箱验证未返回有效登录信息', 'error');
+    showToast('邮箱验证未返回有效登录信息，请在登录窗口重新登录');
+    return true;
+  }
+
+  try {
+    const response = await fetch(cloudUrl('/auth/v1/user'), {
+      headers: {
+        apikey: config.publishableKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    const user = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(user?.msg || user?.message || `同步服务返回 ${response.status}`);
+
+    const session = sessionFromAuthCallback(params, user);
+    if (!session) throw new Error('邮箱验证返回的数据不完整');
+    storeCloudSession(session);
+    recordCloudActivity('邮箱验证成功，已登录同步账号', 'success');
+    render();
+    renderCloudDialog();
+    await syncCloud();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    recordCloudActivity(`邮箱验证登录失败：${message}`, 'error');
+    showToast(`邮箱验证登录失败：${message}`);
+  }
+  return true;
+}
+
 async function cloudAuthRequest(path, body) {
   const config = readCloudConfig();
   if (!isCloudConfigured(config)) throw new Error('请先保存 Supabase Publishable Key');
@@ -1735,7 +1809,8 @@ async function signOutCloud() {
   }
 }
 
-function initializeCloudSync() {
+async function initializeCloudSync() {
+  if (await restoreCloudSessionFromAuthCallback()) return;
   renderSyncStatus();
   if (state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
 }
