@@ -100,6 +100,10 @@ alter table public.journal_entries enable row level security;
 alter table public.daily_summaries enable row level security;
 alter table public.period_summaries enable row level security;
 
+-- RLS decides which rows each signed-in user may access; these grants allow
+-- the authenticated PostgREST role to reach the tables in the first place.
+grant select, insert, update, delete on table public.journal_entries, public.daily_summaries, public.period_summaries to authenticated;
+
 drop policy if exists "own journal entries" on public.journal_entries;
 create policy "own journal entries" on public.journal_entries
 for all to authenticated

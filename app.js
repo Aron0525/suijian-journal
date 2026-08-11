@@ -111,13 +111,17 @@ const elements = {
   searchPanelButton: document.querySelector('#search-panel-button'),
   cloudSyncButton: document.querySelector('#cloud-sync-button'),
   cloudAccountButton: document.querySelector('#cloud-account-button'),
+  accountDialog: document.querySelector('#account-dialog'),
+  closeAccountDialog: document.querySelector('#close-account-dialog'),
+  accountDialogCopy: document.querySelector('#account-dialog-copy'),
   syncDialog: document.querySelector('#sync-dialog'),
   closeSyncDialog: document.querySelector('#close-sync-dialog'),
   syncDialogCopy: document.querySelector('#sync-dialog-copy'),
-  syncConfigForm: document.querySelector('#sync-config-form'),
-  supabaseUrl: document.querySelector('#supabase-url'),
-  supabasePublishableKey: document.querySelector('#supabase-publishable-key'),
-  syncConfigStatus: document.querySelector('#sync-config-status'),
+  syncAccountBrief: document.querySelector('#sync-account-brief'),
+  syncAccountMessage: document.querySelector('#sync-account-message'),
+  syncLoginRequired: document.querySelector('#sync-login-required'),
+  syncActivePanel: document.querySelector('#sync-active-panel'),
+  syncOpenAccount: document.querySelector('#sync-open-account'),
   syncAuthForm: document.querySelector('#sync-auth-form'),
   syncEmail: document.querySelector('#sync-email'),
   syncPassword: document.querySelector('#sync-password'),
@@ -871,7 +875,7 @@ function usesLocalAiProxy() {
 async function aiProxyRequest() {
   if (usesLocalAiProxy()) return { url: '/api/ai', headers: { 'Content-Type': 'application/json' } };
   const cloudConfig = readCloudConfig();
-  if (!isCloudConfigured(cloudConfig)) throw new Error('请先在同步窗口保存 Supabase Publishable Key');
+  if (!isCloudConfigured(cloudConfig)) throw new Error('云同步服务暂未连接，请稍后重试');
   const session = await activeCloudSession();
   return {
     url: `${cloudConfig.url}/functions/v1/ai-proxy`,
@@ -1292,12 +1296,8 @@ function renderSyncStatus() {
   elements.syncStatus.textContent = hasCloudChanges() ? '等待云同步' : '云端已同步';
 }
 
-function renderCloudDialog() {
-  const config = readCloudConfig();
+function renderCloudAccountDialog() {
   const session = state.cloud.session;
-  elements.supabaseUrl.value = config.url || DEFAULT_SUPABASE_URL;
-  elements.supabasePublishableKey.value = config.publishableKey;
-  elements.syncConfigStatus.textContent = isCloudConfigured(config) ? '已配置' : '待配置';
   elements.syncAccountStatus.textContent = session ? '已登录' : '未登录';
   elements.syncAuthForm.hidden = Boolean(session);
   elements.syncSignedIn.hidden = !session;
@@ -1308,43 +1308,63 @@ function renderCloudDialog() {
   elements.syncLastSession.textContent = session?.expiresAt
     ? `本次登录有效至 ${new Date(session.expiresAt).toLocaleString('zh-CN')}`
     : '';
-  elements.syncDialogCopy.textContent = session
-    ? '同一邮箱登录手机和电脑后，内容会自动合并并保存到你的云端账号。'
-    : '先保存连接信息，再用同一邮箱登录手机和电脑。';
+  elements.accountDialogCopy.textContent = session
+    ? '同一邮箱登录手机和电脑后，日记会自动合并到这个账号。'
+    : '注册一个账号后，即可把日记同步到其他设备。';
   elements.cloudAccountButton.textContent = session ? '账号' : '登录';
-  elements.cloudAccountButton.setAttribute('aria-label', session ? '打开同步账号窗口' : '打开登录或注册窗口');
+  elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
+}
+
+function renderCloudSyncDialog() {
+  const session = state.cloud.session;
+  const accountId = state.data.cloudSync?.accountId;
+  elements.syncLoginRequired.hidden = Boolean(session);
+  elements.syncActivePanel.hidden = !session;
+  elements.syncAccountBrief.textContent = session?.user?.email || '尚未登录同步账号';
+  elements.syncAccountMessage.textContent = session
+    ? (accountId && accountId !== session.user.id
+      ? '检测到本机曾使用其他账号。立即同步时会先让你确认是否合并。'
+      : (hasCloudChanges() ? '本机有新内容等待上传。' : '本机与云端已处于同步状态。'))
+    : '登录后，日记、当天摘要与跨日汇总会保存到你的云端账号。';
+  elements.syncDialogCopy.textContent = session
+    ? '这里仅处理跨设备同步，不修改你的日记内容。'
+    : '请先登录账号，再开始跨设备同步。';
   renderCloudActivity();
   renderSyncStatus();
 }
 
-function openCloudSyncDialog(focus = 'config') {
-  renderCloudDialog();
-  const target = state.cloud.session
-    ? elements.syncNowButton
-    : (focus === 'auth' ? elements.syncEmail : elements.supabasePublishableKey);
+function renderCloudDialogs() {
+  renderCloudAccountDialog();
+  renderCloudSyncDialog();
+}
+
+function openCloudSyncDialog() {
+  renderCloudDialogs();
+  const target = state.cloud.session ? elements.syncNowButton : elements.syncOpenAccount;
   openWorkspaceDialog(elements.syncDialog, target);
 }
 
 function openCloudAccountDialog() {
-  openCloudSyncDialog('auth');
+  renderCloudDialogs();
+  const target = state.cloud.session ? elements.syncSignOut : elements.syncEmail;
+  openWorkspaceDialog(elements.accountDialog, target);
 }
 
 function handleCloudSyncButton() {
-  if (!state.cloud.session) {
-    openCloudAccountDialog();
-    return;
-  }
-  syncCloud();
+  openCloudSyncDialog();
 }
 
 function closeCloudSyncDialog() {
   closeWorkspaceDialog(elements.syncDialog);
 }
 
+function closeCloudAccountDialog() {
+  closeWorkspaceDialog(elements.accountDialog);
+}
+
 function ensureCloudConfigured() {
   if (isCloudConfigured()) return true;
-  openCloudSyncDialog('config');
-  showToast('先保存 Supabase Publishable Key');
+  showToast('云同步服务暂未连接，请稍后重试');
   return false;
 }
 
@@ -1434,7 +1454,7 @@ async function restoreCloudSessionFromAuthCallback() {
     storeCloudSession(session);
     recordCloudActivity('邮箱验证成功，已登录同步账号', 'success');
     render();
-    renderCloudDialog();
+    renderCloudDialogs();
     await syncCloud();
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
@@ -1686,7 +1706,7 @@ async function pushCloudChanges() {
 async function syncCloud({ quiet = false } = {}) {
   if (!isCloudConfigured() || !state.cloud.session || state.cloud.syncing) return;
   state.cloud.syncing = true;
-  renderSyncStatus();
+  renderCloudSyncDialog();
   try {
     const session = await activeCloudSession();
     const meta = state.data.cloudSync ?? (state.data.cloudSync = emptyCloudMeta());
@@ -1697,7 +1717,7 @@ async function syncCloud({ quiet = false } = {}) {
           '检测到设备上保留着另一个同步账号的数据。为防止日记串号，默认不会上传。\n\n确认后，当前本地日记会合并并上传到新账号；取消则保持本地数据不变，建议先导出备份。'
         );
         if (!approved) {
-          renderSyncStatus();
+          renderCloudSyncDialog();
           return;
         }
       }
@@ -1709,13 +1729,13 @@ async function syncCloud({ quiet = false } = {}) {
     await pushCloudChanges();
     persistData({ queue: false });
     render();
-    renderCloudDialog();
+    renderCloudDialogs();
     if (!quiet) {
       recordCloudActivity('手动同步完成', 'success');
       showToast('云端内容已同步');
     }
   } catch (error) {
-    renderSyncStatus();
+    renderCloudSyncDialog();
     if (!quiet) {
       const message = error instanceof Error ? error.message : '未知错误';
       recordCloudActivity(`同步失败：${message}`, 'error');
@@ -1725,7 +1745,7 @@ async function syncCloud({ quiet = false } = {}) {
     }
   } finally {
     state.cloud.syncing = false;
-    renderSyncStatus();
+    renderCloudDialogs();
   }
 }
 
@@ -1754,7 +1774,7 @@ async function signInCloud() {
     showToast(`登录失败：${message}`);
   } finally {
     setBusy(elements.syncSignIn, false);
-    renderCloudDialog();
+    renderCloudDialogs();
   }
 }
 
@@ -1785,7 +1805,7 @@ async function signUpCloud() {
     showToast(`注册失败：${message}`);
   } finally {
     setBusy(elements.syncSignUp, false);
-    renderCloudDialog();
+    renderCloudDialogs();
   }
 }
 
@@ -1804,14 +1824,14 @@ async function signOutCloud() {
   } finally {
     storeCloudSession(null);
     recordCloudActivity('已退出同步账号', 'info');
-    renderCloudDialog();
+    renderCloudDialogs();
     showToast('已退出同步账号，本地日记仍保留');
   }
 }
 
 async function initializeCloudSync() {
   if (await restoreCloudSessionFromAuthCallback()) return;
-  renderSyncStatus();
+  renderCloudDialogs();
   if (state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
 }
 
@@ -1824,27 +1844,17 @@ function bindEvents() {
   elements.searchPanelButton.addEventListener('click', openSearchDialog);
   elements.cloudSyncButton.addEventListener('click', handleCloudSyncButton);
   elements.cloudAccountButton.addEventListener('click', openCloudAccountDialog);
+  elements.closeAccountDialog.addEventListener('click', closeCloudAccountDialog);
   elements.closeSyncDialog.addEventListener('click', closeCloudSyncDialog);
+  closeDialogOnBackdrop(elements.accountDialog, closeCloudAccountDialog);
   closeDialogOnBackdrop(elements.syncDialog, closeCloudSyncDialog);
-  elements.syncConfigForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const url = elements.supabaseUrl.value.trim().replace(/\/$/, '');
-    const publishableKey = elements.supabasePublishableKey.value.trim();
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'https:' || !publishableKey) throw new Error('invalid');
-      const previous = readCloudConfig();
-      saveCloudConfig({ url, publishableKey });
-      if (state.cloud.session && previous.url !== url) storeCloudSession(null);
-      renderCloudDialog();
-      showToast('云同步连接信息已保存');
-    } catch {
-      showToast('请填写 HTTPS 项目地址和 Publishable Key');
-    }
-  });
   elements.syncAuthForm.addEventListener('submit', (event) => event.preventDefault());
   elements.syncSignIn.addEventListener('click', signInCloud);
   elements.syncSignUp.addEventListener('click', signUpCloud);
+  elements.syncOpenAccount.addEventListener('click', () => {
+    closeCloudSyncDialog();
+    openCloudAccountDialog();
+  });
   elements.syncNowButton.addEventListener('click', () => syncCloud());
   elements.syncSignOut.addEventListener('click', signOutCloud);
   elements.clearSyncActivity.addEventListener('click', clearCloudActivity);
