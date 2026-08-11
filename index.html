@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; worker-src 'self'" />
+    <meta name="theme-color" content="#173f3a" />
+    <meta name="description" content="一个本地优先、可离线使用的日历日记 PWA。" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/icon-180.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>岁笺 · 日历日记</title>
+  </head>
+  <body>
+    <div class="paper-texture" aria-hidden="true"></div>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#today-view" aria-label="岁笺首页">
+          <span class="brand-mark">岁</span>
+          <span>岁笺</span>
+        </a>
+        <div class="top-actions" aria-label="工具栏">
+          <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
+          <button id="cloud-account-button" class="workspace-action account-action" type="button">登录</button>
+          <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
+          <button id="summary-panel-button" class="workspace-action" type="button">汇总</button>
+          <button id="search-panel-button" class="workspace-action" type="button">搜索</button>
+          <button id="model-config-button" class="text-button">模型配置</button>
+          <button id="export-button" class="text-button">导出</button>
+          <label class="text-button import-label" for="import-input">导入</label>
+          <input id="import-input" type="file" accept="application/json,.json" hidden />
+        </div>
+      </header>
+
+      <section id="today-view" class="view active" aria-labelledby="today-title">
+        <div class="hero-row">
+          <div>
+            <p id="date-label" class="eyebrow"></p>
+            <h1 id="today-title">把今天留在这里。</h1>
+          </div>
+          <div class="hero-note">
+            <span id="entry-count">0 条记录</span>
+            <span class="dot-divider"></span>
+            <button id="go-today" class="quiet-button">回到今天</button>
+          </div>
+        </div>
+
+        <div class="today-grid">
+          <section class="editor-panel card" aria-labelledby="editor-title">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">快速记录</p>
+                <h2 id="editor-title">此刻想说什么？</h2>
+              </div>
+              <span id="draft-status" class="draft-status">草稿随输入保存</span>
+            </div>
+            <label class="sr-only" for="entry-title">记录标题</label>
+            <input id="entry-title" class="entry-title" maxlength="80" placeholder="给这段记录取个名字（选填）" />
+            <label class="sr-only" for="entry-content">日记内容</label>
+            <textarea id="entry-content" rows="9" maxlength="10000" placeholder="不用组织语言，先把想到的写下来。"></textarea>
+            <section id="editor-ai-result" class="editor-ai-result" hidden aria-live="polite">
+              <div class="ai-suggestion-head">
+                <span>AI 整理建议</span>
+                <button id="dismiss-ai-suggestion" class="text-button">放弃建议</button>
+              </div>
+              <p id="editor-ai-content" class="ai-content"></p>
+              <div class="ai-consent-row">
+                <span>原文本仍在输入框中，确认后才会替换。</span>
+                <button id="apply-ai-suggestion" class="primary-button">采用建议并替换</button>
+              </div>
+            </section>
+            <div class="editor-footer">
+              <span id="word-count">0 字</span>
+              <div class="editor-actions">
+                <button id="clear-draft" class="quiet-button">清空</button>
+                <button id="organize-draft" class="ai-button">✦ AI 整理</button>
+                <button id="edit-organize-prompt" class="prompt-button" type="button">整理提示词</button>
+                <button id="save-entry" class="primary-button">保存这条记录</button>
+              </div>
+            </div>
+          </section>
+
+          <aside class="day-panel card" aria-labelledby="day-summary-title">
+            <div class="panel-heading compact">
+              <div>
+                <p class="eyebrow">当天整理</p>
+                <h2 id="day-summary-title">今天的轮廓</h2>
+              </div>
+              <div class="summary-actions">
+                <button id="edit-summary-prompt" class="prompt-button prompt-button-light" type="button">汇总提示词</button>
+                <button id="summarize-day" class="round-button" aria-label="AI 总结今天">✦</button>
+              </div>
+            </div>
+            <div id="day-summary" class="summary-empty">
+              写下第一条记录后，可以在这里生成当天摘要。
+            </div>
+            <p class="summary-hint">当天汇总只生成独立摘要，不会改写任何日记原文。</p>
+          </aside>
+        </div>
+
+        <section class="entries-section" aria-labelledby="entries-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">日期档案</p>
+              <h2 id="entries-title">今天的片段</h2>
+            </div>
+            <button id="new-entry-focus" class="quiet-button">+ 新建记录</button>
+          </div>
+          <div id="entry-list" class="entry-list" aria-live="polite"></div>
+        </section>
+        <section class="archive-section" aria-labelledby="calendar-title">
+        <div class="calendar-layout">
+          <section class="calendar-archive card" aria-labelledby="calendar-title">
+            <div class="calendar-archive-head">
+              <div>
+                <p class="eyebrow">全部记录</p>
+                <h1 id="calendar-title">日记档案</h1>
+              </div>
+              <span id="calendar-archive-count" class="calendar-archive-count">0 条记录</span>
+            </div>
+            <div class="calendar-filter-bar" aria-label="日记筛选">
+              <button id="clear-calendar-filter" type="button" class="quiet-button">全部记录</button>
+              <label>单日<input id="calendar-filter-date" type="date" /></label>
+              <label>日期范围<input id="calendar-filter-start" type="date" /><span>至</span><input id="calendar-filter-end" type="date" /></label>
+            </div>
+            <p id="calendar-filter-status" class="calendar-filter-status">按时间从新到旧排列</p>
+            <div id="calendar-archive-list" class="calendar-archive-list" aria-live="polite"></div>
+          </section>
+
+          <aside class="calendar-sidebar" aria-label="日期选择">
+            <section class="calendar-card card">
+              <div class="calendar-sidebar-head">
+                <p class="eyebrow">选择日期</p>
+                <div class="calendar-controls">
+                  <button id="previous-month" class="icon-button" aria-label="上个月">←</button>
+                  <span id="month-label" class="month-label"></span>
+                  <button id="next-month" class="icon-button" aria-label="下个月">→</button>
+                </div>
+              </div>
+              <div class="weekday-row" aria-hidden="true">
+                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+              </div>
+              <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="日历"></div>
+              <p class="calendar-legend"><span class="legend-mark"></span>点击日期筛选当天记录</p>
+            </section>
+          </aside>
+        </div>
+        </section>
+      </section>
+    </main>
+
+    <template id="entry-template">
+      <article class="entry-card">
+        <div class="entry-card-header">
+          <div>
+            <p class="entry-time"></p>
+            <h3 class="entry-card-title"></h3>
+          </div>
+          <div class="entry-actions">
+            <button class="entry-delete icon-button" aria-label="删除记录">×</button>
+          </div>
+        </div>
+        <p class="entry-content"></p>
+        <details class="original-version" hidden>
+          <summary>查看 AI 替换前原文</summary>
+          <p class="original-content"></p>
+        </details>
+      </article>
+    </template>
+
+    <template id="period-summary-template">
+      <article class="period-summary-card card">
+        <div class="period-summary-head">
+          <div>
+            <p class="period-summary-date"></p>
+            <h2 class="period-summary-title"></h2>
+          </div>
+          <button class="delete-period-summary icon-button" aria-label="删除汇总">×</button>
+        </div>
+        <p class="period-summary-source"></p>
+        <p class="period-summary-content"></p>
+      </article>
+    </template>
+
+    <dialog id="period-summary-dialog" class="workspace-dialog" aria-labelledby="review-title">
+      <div class="workspace-dialog-body">
+        <button id="close-period-summary-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭汇总窗口">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">跨日回顾</p>
+            <h1 id="review-title">汇总这些天</h1>
+          </div>
+        </div>
+        <section class="review-card card">
+          <div class="review-intro">
+            <div>
+              <h2>把一段时间的记录交给 AI 回看。</h2>
+              <p>它会生成一份独立总结；范围内的日记只读，不会被修改。</p>
+            </div>
+            <span id="period-entry-count" class="period-entry-count">0 条来源记录</span>
+          </div>
+          <div class="period-form">
+            <label>开始日期<input id="period-start" type="date" /></label>
+            <label>结束日期<input id="period-end" type="date" /></label>
+            <div class="period-ai-actions">
+              <button id="edit-period-summary-prompt" class="prompt-button" type="button">汇总提示词</button>
+              <button id="summarize-period" class="primary-button">✦ AI 汇总这段时间</button>
+            </div>
+          </div>
+          <p class="range-hint">每次生成都是一个独立汇总版本，来源日记始终保留。</p>
+        </section>
+        <div id="period-summary-list" class="period-summary-list"></div>
+      </div>
+    </dialog>
+
+    <dialog id="search-dialog" class="workspace-dialog search-dialog" aria-labelledby="search-title">
+      <div class="workspace-dialog-body">
+        <button id="close-search-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭搜索窗口">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">翻找记忆</p>
+            <h1 id="search-title">查找日记</h1>
+          </div>
+        </div>
+        <section class="search-card card">
+          <label class="sr-only" for="search-input">搜索日记</label>
+          <input id="search-input" class="search-input" type="search" placeholder="输入关键词、标题或标签" />
+          <div id="search-results" class="search-results"></div>
+        </section>
+      </div>
+    </dialog>
+
+    <dialog id="sync-dialog" class="workspace-dialog sync-dialog" aria-labelledby="sync-dialog-title">
+      <div class="workspace-dialog-body">
+        <button id="close-sync-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭云同步窗口">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">跨设备保存</p>
+            <h1 id="sync-dialog-title">云同步</h1>
+          </div>
+        </div>
+        <p id="sync-dialog-copy" class="dialog-copy">同一邮箱登录手机和电脑后，日记会保存到你的云端账号。</p>
+        <section class="sync-card card">
+          <form id="sync-config-form" class="sync-config-form">
+            <div class="sync-card-head">
+              <div><span class="prompt-kicker">连接信息</span><strong>Supabase 项目</strong></div>
+              <span id="sync-config-status" class="sync-config-status">待配置</span>
+            </div>
+            <label>项目地址<input id="supabase-url" type="url" required autocomplete="url" /></label>
+            <label>Publishable Key<input id="supabase-publishable-key" type="password" required autocomplete="off" placeholder="sb_publishable_…" /></label>
+            <p class="sync-help">在 Supabase 的 Settings → API keys 中复制 Publishable Key。此 Key 用于前端连接，日记访问仍由你的账号和数据表规则控制。</p>
+            <button type="submit" class="quiet-button sync-save-config">保存连接信息</button>
+          </form>
+        </section>
+        <section id="sync-auth-panel" class="sync-card card">
+          <div class="sync-card-head">
+            <div><span class="prompt-kicker">你的同步账号</span><strong>登录或注册</strong></div>
+            <span id="sync-account-status" class="sync-config-status">未登录</span>
+          </div>
+          <p id="sync-auth-copy" class="sync-auth-copy">注册后请完成邮箱验证，再用同一邮箱登录。</p>
+          <form id="sync-auth-form" class="sync-auth-form">
+            <label>邮箱<input id="sync-email" type="email" required autocomplete="email" placeholder="name@example.com" /></label>
+            <label>密码<input id="sync-password" type="password" required minlength="8" autocomplete="current-password" placeholder="至少 8 位" /></label>
+            <div class="sync-auth-actions">
+              <button id="sync-sign-in" type="button" class="primary-button">登录并同步</button>
+              <button id="sync-sign-up" type="button" class="quiet-button">注册新账号</button>
+            </div>
+          </form>
+          <div id="sync-signed-in" class="sync-signed-in" hidden>
+            <p>当前账号：<strong id="sync-account-email"></strong></p>
+            <p id="sync-last-session" class="sync-session-copy"></p>
+            <div class="sync-auth-actions">
+              <button id="sync-now-button" type="button" class="primary-button">立即同步</button>
+              <button id="sync-sign-out" type="button" class="quiet-button">退出账号</button>
+            </div>
+          </div>
+        </section>
+        <section class="sync-card sync-activity-card card" aria-labelledby="sync-activity-title">
+          <div class="sync-card-head">
+            <div><span class="prompt-kicker">窗口记录</span><strong id="sync-activity-title">账号与同步记录</strong></div>
+            <button id="clear-sync-activity" type="button" class="quiet-button sync-clear-activity">清除记录</button>
+          </div>
+          <ol id="sync-activity-list" class="sync-activity-list" aria-live="polite"></ol>
+        </section>
+        <p class="dialog-note">同步只上传日记、当天摘要和跨日汇总；草稿只保存在当前设备，模型 API Key 仅保留到本次页面会话结束。</p>
+      </div>
+    </dialog>
+
+    <dialog id="ai-config-dialog" class="ai-config-dialog" aria-labelledby="ai-config-title">
+      <form id="ai-config-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">模型连接</p>
+            <h2 id="ai-config-title">配置 AI API</h2>
+          </div>
+          <button id="close-ai-config" type="button" class="icon-button" aria-label="关闭配置窗口">×</button>
+        </div>
+        <p class="dialog-copy">填写已允许服务商的 HTTPS API 地址；可填基础地址，例如 https://api.deepseek.com，系统会自动补全 /chat/completions。API Key 仅保留在当前页面会话，刷新页面后需要重新填写。</p>
+        <label>API 地址<input id="ai-endpoint" type="url" required placeholder="https://api.deepseek.com 或完整 /chat/completions 地址" autocomplete="url" /></label>
+        <label>模型名称<input id="ai-model" type="text" required placeholder="填写服务商提供的模型 ID" autocomplete="off" /></label>
+        <label>API Key<input id="ai-api-key" type="password" required placeholder="仅保留到关闭或刷新页面" autocomplete="off" /></label>
+        <div class="ai-prompt-grid" aria-label="AI 提示词设置">
+          <section class="ai-prompt-panel" aria-labelledby="organize-prompt-title">
+            <div class="ai-prompt-head">
+              <div><span class="prompt-kicker">写作时使用</span><strong id="organize-prompt-title">AI 整理提示词</strong></div>
+              <button id="restore-organize-prompt" type="button" class="quiet-button">恢复默认</button>
+            </div>
+            <textarea id="ai-organize-prompt" rows="6" aria-describedby="organize-prompt-help" placeholder="填写 AI 整理规则"></textarea>
+            <div class="ai-prompt-meta"><span id="organize-prompt-help">用于输入框的语言整理。可使用 {{输入内容}} 占位符，系统会自动替换为当前日记原文。</span><span id="ai-organize-prompt-count">0 字</span></div>
+          </section>
+          <section class="ai-prompt-panel" aria-labelledby="summary-prompt-title">
+            <div class="ai-prompt-head">
+              <div><span class="prompt-kicker">回顾时使用</span><strong id="summary-prompt-title">AI 汇总提示词</strong></div>
+              <button id="restore-summary-prompt" type="button" class="quiet-button">恢复默认</button>
+            </div>
+            <textarea id="ai-summary-prompt" rows="6" aria-describedby="summary-prompt-help" placeholder="填写 AI 汇总规则"></textarea>
+            <div class="ai-prompt-meta"><span id="summary-prompt-help">用于当天摘要和日期范围汇总。可使用 {{输入内容}} 占位符，系统会自动替换为所选日记。</span><span id="ai-summary-prompt-count">0 字</span></div>
+          </section>
+        </div>
+        <p class="dialog-note">当前代理只转发本次请求，不在服务端写入 API Key；Key 不会写入浏览器存储。</p>
+        <div class="dialog-actions">
+          <button id="remove-ai-config" type="button" class="quiet-button">清除配置</button>
+          <button type="submit" class="primary-button">保存配置</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="prompt-editor-dialog" class="ai-config-dialog prompt-editor-dialog" aria-labelledby="prompt-editor-title">
+      <form id="prompt-editor-form">
+        <div class="dialog-head">
+          <div>
+            <p id="prompt-editor-kicker" class="eyebrow">AI 提示词</p>
+            <h2 id="prompt-editor-title">编辑提示词</h2>
+          </div>
+          <button id="close-prompt-editor" type="button" class="icon-button" aria-label="关闭提示词窗口">×</button>
+        </div>
+        <p id="prompt-editor-copy" class="dialog-copy"></p>
+        <label id="prompt-editor-label">提示词<textarea id="prompt-editor-input" rows="12" placeholder="填写提示词"></textarea></label>
+        <div class="ai-prompt-meta"><span>支持 {{输入内容}} 占位符，系统会替换为当前日记或所选范围的记录。</span><span id="prompt-editor-count">0 字</span></div>
+        <div class="dialog-actions">
+          <button id="restore-prompt-editor" type="button" class="quiet-button">恢复默认</button>
+          <button type="submit" class="primary-button">保存提示词</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

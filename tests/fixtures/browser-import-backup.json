@@ -1,0 +1,19 @@
+{
+  "app": "岁笺 Calendar Journal",
+  "version": 2,
+  "data": {
+    "entries": [
+      {
+        "id": "318b7d9f-45bb-4f64-b41a-73ee26a8db01",
+        "date": "2026-08-08",
+        "title": "导入验收记录",
+        "content": "这是一条只用于浏览器导入功能验收的虚构记录。",
+        "originalContent": "",
+        "createdAt": "2026-08-08T12:00:00.000Z",
+        "updatedAt": "2026-08-08T12:00:00.000Z"
+      }
+    ],
+    "summaries": {},
+    "periodSummaries": []
+  }
+}
