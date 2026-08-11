@@ -1,10 +1,11 @@
-const CACHE_NAME = 'suijian-pwa-v20';
+const CACHE_NAME = 'suijian-pwa-v21';
+const RELEASE = '20260811-auth-callback';
 const ASSETS = [
   './',
   './index.html',
   './index.htm',
   './styles.css',
-  './app.js',
+  `./app.js?release=${RELEASE}`,
   './manifest.webmanifest',
   './icon.svg',
   './icons/icon-180.png',
@@ -32,7 +33,10 @@ function cacheResponse(request, response) {
 }
 
 function networkFirst(request) {
-  return fetch(request)
+  // GitHub Pages serves static files with a short HTTP cache lifetime. Bypass
+  // that cache for the app shell so an already-installed PWA receives release
+  // fixes as soon as its service worker updates.
+  return fetch(new Request(request, { cache: 'no-store' }))
     .then((response) => cacheResponse(request, response))
     .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html')));
 }

@@ -1954,5 +1954,5 @@ render();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260811-auth-callback'));
 }

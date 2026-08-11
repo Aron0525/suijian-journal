@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest] = await Promise.all([
+const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index] = await Promise.all([
   readFile(new URL('../app.js', import.meta.url), 'utf8'),
   readFile(new URL('../sw.js', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/functions/ai-proxy/index.ts', import.meta.url), 'utf8'),
   readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8'),
   readFile(new URL('../manifest.webmanifest', import.meta.url), 'utf8'),
+  readFile(new URL('../index.html', import.meta.url), 'utf8'),
 ]);
 
 assert.match(app, /sessionStorage\.setItem\(CLOUD_SESSION_KEY/);
@@ -24,6 +25,10 @@ assert.match(app, /function recordCloudActivity\(message/);
 assert.match(app, /persistDataChange/);
 assert.doesNotMatch(serviceWorker, /caches\.match\(event\.request\)/);
 assert.match(serviceWorker, /if \(url\.origin !== self\.location\.origin\) return/);
+assert.match(serviceWorker, /cache: 'no-store'/);
+assert.match(serviceWorker, /suijian-pwa-v21/);
+assert.match(index, /app\.js\?release=20260811-auth-callback/);
+assert.match(app, /sw\.js\?release=20260811-auth-callback/);
 assert.match(edgeFunction, /parsed\.protocol !== 'https:'/);
 assert.match(edgeFunction, /allowedAiHosts\(\)\.has/);
 assert.match(edgeFunction, /createSupabaseContext\(request, \{ auth: 'user' \}\)/);
