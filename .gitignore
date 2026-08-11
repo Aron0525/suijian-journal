@@ -4,6 +4,7 @@ build/
 .playwright-cli/
 .verification/
 .netlify/
+cloud-sync-*.png
 *.apk
 *.aab
 *.zip
