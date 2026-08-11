@@ -1,3 +1,5 @@
+import { createSupabaseContext } from 'jsr:@supabase/server@^1';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
@@ -33,53 +35,55 @@ function normalizeChatEndpoint(rawEndpoint: string) {
   return url.toString();
 }
 
-Deno.serve(async (request) => {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
-  if (request.method !== 'POST') return json({ error: { message: '仅支持 POST 请求' } }, 405);
-  if (!request.headers.get('authorization')?.startsWith('Bearer ')) {
-    return json({ error: { message: '请先登录同步账号' } }, 401);
-  }
+export default {
+  fetch: async (request: Request) => {
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
+    if (request.method !== 'POST') return json({ error: { message: '仅支持 POST 请求' } }, 405);
 
-  const requestText = await request.text();
-  if (!requestText || new TextEncoder().encode(requestText).byteLength > MAX_BODY_BYTES) {
-    return json({ error: { message: '请求内容大小不符合要求' } }, 413);
-  }
+    const { error: authError } = await createSupabaseContext(request, { auth: 'user' });
+    if (authError) return json({ error: { message: '请先登录同步账号' } }, authError.status || 401);
 
-  try {
-    const payload = JSON.parse(requestText);
-    const endpoint = normalizeChatEndpoint(payload?.config?.endpoint || '');
-    const model = String(payload?.config?.model || '').trim();
-    const apiKey = String(payload?.config?.apiKey || '').trim();
-    const system = String(payload?.system || '').trim();
-    const prompt = String(payload?.prompt || '').trim();
-    const parsed = new URL(endpoint);
-
-    if (parsed.protocol !== 'https:' || !allowedAiHosts().has(parsed.hostname.toLowerCase()) || !model || !apiKey || !system || !prompt) {
-      return json({ error: { message: '请检查 API 地址、模型名称、Key 和请求内容' } }, 400);
+    const requestText = await request.text();
+    if (!requestText || new TextEncoder().encode(requestText).byteLength > MAX_BODY_BYTES) {
+      return json({ error: { message: '请求内容大小不符合要求' } }, 413);
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), MODEL_REQUEST_TIMEOUT_MS);
-    const upstream = await fetch(endpoint, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    }).finally(() => clearTimeout(timeout));
-    const responseBody = await upstream.text();
-    return new Response(responseBody, {
-      status: upstream.status,
-      headers: { ...corsHeaders, 'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8' },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'AI 代理请求失败';
-    return json({ error: { message } }, 400);
-  }
-});
+    try {
+      const payload = JSON.parse(requestText);
+      const endpoint = normalizeChatEndpoint(payload?.config?.endpoint || '');
+      const model = String(payload?.config?.model || '').trim();
+      const apiKey = String(payload?.config?.apiKey || '').trim();
+      const system = String(payload?.system || '').trim();
+      const prompt = String(payload?.prompt || '').trim();
+      const parsed = new URL(endpoint);
+
+      if (parsed.protocol !== 'https:' || !allowedAiHosts().has(parsed.hostname.toLowerCase()) || !model || !apiKey || !system || !prompt) {
+        return json({ error: { message: '请检查 API 地址、模型名称、Key 和请求内容' } }, 400);
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), MODEL_REQUEST_TIMEOUT_MS);
+      const upstream = await fetch(endpoint, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          temperature: 0.3,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: prompt },
+          ],
+        }),
+      }).finally(() => clearTimeout(timeout));
+      const responseBody = await upstream.text();
+      return new Response(responseBody, {
+        status: upstream.status,
+        headers: { ...corsHeaders, 'Content-Type': upstream.headers.get('content-type') || 'application/json; charset=utf-8' },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI 代理请求失败';
+      return json({ error: { message } }, 400);
+    }
+  },
+};
