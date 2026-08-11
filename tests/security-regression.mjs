@@ -17,6 +17,7 @@ assert.match(app, /email_redirect_to: emailRedirectUrl\(\)/);
 assert.match(app, /async function restoreCloudSessionFromAuthCallback\(\)/);
 assert.match(app, /\/auth\/v1\/user/);
 assert.match(app, /history\.replaceState/);
+assert.match(app, /注册后会立即登录并开始同步/);
 assert.match(app, /function validateCloudCredentials\(\)/);
 assert.match(app, /const \{ apiKey: legacyApiKey, \.\.\.safeConfig \} = config/);
 assert.match(app, /账号已切换，等待确认/);
@@ -28,6 +29,7 @@ assert.match(serviceWorker, /if \(url\.origin !== self\.location\.origin\) retur
 assert.match(serviceWorker, /cache: 'no-store'/);
 assert.match(serviceWorker, /suijian-pwa-v21/);
 assert.match(index, /app\.js\?release=20260811-auth-callback/);
+assert.match(index, /注册后会立即登录并开始同步/);
 assert.match(app, /sw\.js\?release=20260811-auth-callback/);
 assert.match(edgeFunction, /parsed\.protocol !== 'https:'/);
 assert.match(edgeFunction, /allowedAiHosts\(\)\.has/);

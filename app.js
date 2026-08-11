@@ -1304,7 +1304,7 @@ function renderCloudDialog() {
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
     ? '本次浏览器或 App 会话内已登录；关闭会话后可在右上角重新登录。'
-    : '注册后请打开验证邮件，再回到这里用同一邮箱登录。';
+    : '注册后会立即登录并开始同步。';
   elements.syncLastSession.textContent = session?.expiresAt
     ? `本次登录有效至 ${new Date(session.expiresAt).toLocaleString('zh-CN')}`
     : '';
@@ -1777,7 +1777,7 @@ async function signUpCloud() {
     } else {
       elements.syncPassword.value = '';
       recordCloudActivity('注册已提交，等待邮箱验证', 'info');
-      showToast('注册已提交，请打开验证邮件后再登录同步');
+      showToast('注册已提交，请按页面提示完成后再登录同步');
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
