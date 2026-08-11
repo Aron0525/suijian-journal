@@ -57,6 +57,8 @@ python3 server.py
 - GitHub Pages 站点地址形如 `https://<GitHub 用户名>.github.io/<仓库名>/`。发布完成后，在 Supabase **Authentication → URL Configuration** 中把此地址设为 Site URL，并增加 `https://<GitHub 用户名>.github.io/<仓库名>/**` 到 Redirect URLs；邮箱验证后会回到这个网址。
 - 该项目的静态资源、PWA Manifest、Service Worker 都使用相对路径，因此可以部署在 GitHub Pages 的仓库子路径下。
 
+当前线上地址：[https://aron0525.github.io/suijian-journal/](https://aron0525.github.io/suijian-journal/)；代码仓库：[Aron0525/suijian-journal](https://github.com/Aron0525/suijian-journal)。
+
 ## Android App（原生安装包）
 
 Android 已使用 Capacitor 原生壳打包，安装包内置 `dist-mobile/` 的页面资源，不通过浏览器打开网站。当前可直接安装的 APK：`岁笺-Android-v1.0-debug.apk`。
