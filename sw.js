@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v21';
-const RELEASE = '20260811-auth-callback';
+const CACHE_NAME = 'suijian-pwa-v22';
+const RELEASE = '20260811-auto-sync-layout';
 const ASSETS = [
   './',
   './index.html',

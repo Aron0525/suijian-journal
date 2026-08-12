@@ -21,18 +21,20 @@
           <span>岁笺</span>
         </a>
         <div class="top-actions" aria-label="工具栏">
-          <div class="top-primary-actions">
-            <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
-            <button id="cloud-account-button" class="workspace-action account-action" type="button">登录</button>
-            <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
-          </div>
-          <div class="top-secondary-actions">
+          <div class="top-tools">
             <button id="summary-panel-button" class="workspace-action" type="button">汇总</button>
-            <button id="search-panel-button" class="workspace-action" type="button">搜索</button>
+            <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
             <button id="model-config-button" class="text-button">模型配置</button>
             <button id="export-button" class="text-button">导出</button>
             <label class="text-button import-label" for="import-input">导入</label>
             <input id="import-input" type="file" accept="application/json,.json" hidden />
+          </div>
+          <div class="top-account-actions">
+            <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
+            <button id="search-panel-button" class="icon-button search-action" type="button" aria-label="搜索日记">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="5.8"></circle><path d="m15.2 15.2 4.1 4.1"></path></svg>
+            </button>
+            <button id="cloud-account-button" class="workspace-action account-action" type="button">登录</button>
           </div>
         </div>
       </header>
@@ -85,44 +87,49 @@
             </div>
           </section>
 
-          <aside class="day-panel card" aria-labelledby="day-summary-title">
-            <div class="panel-heading compact">
+          <aside class="today-calendar card" aria-labelledby="today-calendar-title">
+            <div class="today-calendar-head">
               <div>
-                <p class="eyebrow">当天整理</p>
-                <h2 id="day-summary-title">今天的轮廓</h2>
+                <p class="eyebrow">时间坐标</p>
+                <h2 id="today-calendar-title">日历</h2>
               </div>
-              <div class="summary-actions">
-                <button id="edit-summary-prompt" class="prompt-button prompt-button-light" type="button">汇总提示词</button>
-                <button id="summarize-day" class="round-button" aria-label="AI 总结今天">✦</button>
+              <div class="calendar-controls">
+                <button id="previous-month" class="icon-button" aria-label="上个月">←</button>
+                <span id="month-label" class="month-label"></span>
+                <button id="next-month" class="icon-button" aria-label="下个月">→</button>
               </div>
             </div>
-            <div id="day-summary" class="summary-empty">
-              写下第一条记录后，可以在这里生成当天摘要。
+            <div class="weekday-row" aria-hidden="true">
+              <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
             </div>
-            <p class="summary-hint">当天汇总只生成独立摘要，不会改写任何日记原文。</p>
+            <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="日历"></div>
+            <p class="calendar-legend"><span class="legend-mark"></span>点击日期筛选日记档案</p>
           </aside>
         </div>
 
-        <section class="entries-section" aria-labelledby="entries-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">日期档案</p>
-              <h2 id="entries-title">今天的片段</h2>
-            </div>
-            <button id="new-entry-focus" class="quiet-button">+ 新建记录</button>
-          </div>
-          <div id="entry-list" class="entry-list" aria-live="polite"></div>
-        </section>
         <section class="archive-section" aria-labelledby="calendar-title">
-        <div class="calendar-layout">
           <section class="calendar-archive card" aria-labelledby="calendar-title">
             <div class="calendar-archive-head">
               <div>
-                <p class="eyebrow">全部记录</p>
+                <p class="eyebrow">按最新时间排列</p>
                 <h1 id="calendar-title">日记档案</h1>
               </div>
               <span id="calendar-archive-count" class="calendar-archive-count">0 条记录</span>
             </div>
+            <section class="writing-rhythm" aria-label="写作轨迹">
+              <div class="writing-rhythm-item">
+                <strong id="writing-streak">0 天</strong>
+                <span>连续记录</span>
+              </div>
+              <div class="writing-rhythm-item">
+                <strong id="writing-month-days">0 天</strong>
+                <span>本月天数</span>
+              </div>
+              <div class="writing-rhythm-item">
+                <strong id="writing-total-days">0 天</strong>
+                <span>累计天数</span>
+              </div>
+            </section>
             <div class="calendar-filter-bar" aria-label="日记筛选">
               <button id="clear-calendar-filter" type="button" class="quiet-button">全部记录</button>
               <label>单日<input id="calendar-filter-date" type="date" /></label>
@@ -131,25 +138,6 @@
             <p id="calendar-filter-status" class="calendar-filter-status">按时间从新到旧排列</p>
             <div id="calendar-archive-list" class="calendar-archive-list" aria-live="polite"></div>
           </section>
-
-          <aside class="calendar-sidebar" aria-label="日期选择">
-            <section class="calendar-card card">
-              <div class="calendar-sidebar-head">
-                <p class="eyebrow">选择日期</p>
-                <div class="calendar-controls">
-                  <button id="previous-month" class="icon-button" aria-label="上个月">←</button>
-                  <span id="month-label" class="month-label"></span>
-                  <button id="next-month" class="icon-button" aria-label="下个月">→</button>
-                </div>
-              </div>
-              <div class="weekday-row" aria-hidden="true">
-                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
-              </div>
-              <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="日历"></div>
-              <p class="calendar-legend"><span class="legend-mark"></span>点击日期筛选当天记录</p>
-            </section>
-          </aside>
-        </div>
         </section>
       </section>
     </main>
@@ -371,6 +359,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260811-account-sync" defer></script>
+    <script src="./app.js?release=20260811-auto-sync-layout" defer></script>
   </body>
 </html>

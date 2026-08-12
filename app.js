@@ -11,6 +11,8 @@ const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_CONTENT_CHARS = 10000;
 const MAX_SUMMARY_CHARS = 60000;
+const SESSION_REMEMBER_MS = 2 * 24 * 60 * 60 * 1000;
+const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 let runtimeAiApiKey = '';
 const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
@@ -62,7 +64,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   calendarFilter: { date: '', start: '', end: '' },
-  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncTimer: 0 },
+  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0 },
 };
 
 const elements = {
@@ -94,6 +96,9 @@ const elements = {
   calendarGrid: document.querySelector('#calendar-grid'),
   calendarArchiveList: document.querySelector('#calendar-archive-list'),
   calendarArchiveCount: document.querySelector('#calendar-archive-count'),
+  writingStreak: document.querySelector('#writing-streak'),
+  writingMonthDays: document.querySelector('#writing-month-days'),
+  writingTotalDays: document.querySelector('#writing-total-days'),
   calendarFilterDate: document.querySelector('#calendar-filter-date'),
   calendarFilterStart: document.querySelector('#calendar-filter-start'),
   calendarFilterEnd: document.querySelector('#calendar-filter-end'),
@@ -310,6 +315,30 @@ function entriesForPeriod(start, end) {
     .sort((a, b) => a.date.localeCompare(b.date) || new Date(a.createdAt) - new Date(b.createdAt));
 }
 
+function writingRhythm() {
+  const recordedDates = new Set(
+    state.data.entries
+      .filter((entry) => !entry.deletedAt && isDateKey(entry.date))
+      .map((entry) => entry.date)
+  );
+  const today = localDateKey();
+  const month = today.slice(0, 7);
+  const cursor = parseDateKey(today);
+  if (!recordedDates.has(today)) cursor.setDate(cursor.getDate() - 1);
+
+  let streak = 0;
+  while (recordedDates.has(localDateKey(cursor))) {
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return {
+    streak,
+    monthDays: [...recordedDates].filter((date) => date.startsWith(month)).length,
+    totalDays: recordedDates.size,
+  };
+}
+
 function draftKey() {
   return `${DRAFT_PREFIX}${state.activeDate}`;
 }
@@ -349,14 +378,20 @@ function saveDraft() {
 
 function render() {
   renderToday();
-  renderEntries();
-  renderSummary();
   renderCalendar();
+  renderWritingRhythm();
   renderCalendarArchive();
   renderPeriodPanel();
   renderPeriodSummaries();
   renderSearchResults();
   updateActiveView();
+}
+
+function renderWritingRhythm() {
+  const rhythm = writingRhythm();
+  elements.writingStreak.textContent = `${rhythm.streak} 天`;
+  elements.writingMonthDays.textContent = `${rhythm.monthDays} 天`;
+  elements.writingTotalDays.textContent = `${rhythm.totalDays} 天`;
 }
 
 function renderToday() {
@@ -447,11 +482,10 @@ function renderCalendar() {
     button.setAttribute('role', 'gridcell');
     button.setAttribute('aria-label', `${key}${count ? `，${count} 条记录` : ''}`);
     if (current.getMonth() !== month) button.classList.add('other-month');
-    if (key === state.activeDate) button.classList.add('active-date');
+    if (key === state.calendarFilter.date || (!state.calendarFilter.date && key === state.activeDate)) button.classList.add('active-date');
     if (key === todayKey) button.classList.add('today-date');
     button.innerHTML = `<span class="day-number">${current.getDate()}</span>${count ? `<span class="entry-ink"></span><span class="entry-mini-count">${count}</span>` : ''}`;
     button.addEventListener('click', () => {
-      state.activeDate = key;
       state.visibleMonth = startOfMonth(current);
       state.calendarFilter = { date: key, start: '', end: '' };
       renderCalendar();
@@ -1239,25 +1273,42 @@ function saveCloudConfig(config) {
 }
 
 function loadCloudSession() {
-  // A session survives a refresh in the current browser/App session but is
-  // cleared when that session ends. This avoids silently writing credentials
-  // into durable localStorage while keeping sign-in usable during navigation.
   try {
-    const saved = JSON.parse(sessionStorage.getItem(CLOUD_SESSION_KEY));
-    return saved && typeof saved === 'object' ? saved : null;
+    const persistentRaw = localStorage.getItem(CLOUD_SESSION_KEY);
+    const legacyRaw = sessionStorage.getItem(CLOUD_SESSION_KEY);
+    const saved = JSON.parse(persistentRaw || legacyRaw || 'null');
+    if (!saved || typeof saved !== 'object') return null;
+    const rememberUntil = Number(saved.rememberUntil) || (Date.now() + SESSION_REMEMBER_MS);
+    if (rememberUntil <= Date.now()) {
+      localStorage.removeItem(CLOUD_SESSION_KEY);
+      sessionStorage.removeItem(CLOUD_SESSION_KEY);
+      return null;
+    }
+    const session = { ...saved, rememberUntil };
+    // Migrate the former tab-only session to the two-day device login window.
+    localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(session));
+    sessionStorage.removeItem(CLOUD_SESSION_KEY);
+    return session;
   } catch {
+    localStorage.removeItem(CLOUD_SESSION_KEY);
     sessionStorage.removeItem(CLOUD_SESSION_KEY);
     return null;
   }
 }
 
 function storeCloudSession(session) {
-  state.cloud.session = session;
-  if (session) sessionStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(session));
-  else sessionStorage.removeItem(CLOUD_SESSION_KEY);
+  const rememberUntil = Number(session?.rememberUntil);
+  const rememberedSession = session ? {
+    ...session,
+    rememberUntil: rememberUntil > Date.now() ? rememberUntil : Date.now() + SESSION_REMEMBER_MS,
+  } : null;
+  state.cloud.session = rememberedSession;
+  if (rememberedSession) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(rememberedSession));
+  else localStorage.removeItem(CLOUD_SESSION_KEY);
+  sessionStorage.removeItem(CLOUD_SESSION_KEY);
 }
 
-function sessionFromPayload(payload) {
+function sessionFromPayload(payload, rememberUntil = Date.now() + SESSION_REMEMBER_MS) {
   const raw = payload?.session || payload;
   const accessToken = raw?.access_token;
   const refreshToken = raw?.refresh_token;
@@ -1269,6 +1320,7 @@ function sessionFromPayload(payload) {
     refreshToken,
     user: { id: user.id, email: user.email || '' },
     expiresAt: Number.isFinite(expiry) ? expiry * 1000 : Date.now() + Number(raw.expires_in || 3600) * 1000,
+    rememberUntil,
   };
 }
 
@@ -1303,10 +1355,10 @@ function renderCloudAccountDialog() {
   elements.syncSignedIn.hidden = !session;
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
-    ? '本次浏览器或 App 会话内已登录；关闭会话后可在右上角重新登录。'
-    : '注册后会立即登录并开始同步。';
+    ? '这台设备保持登录两天；期间打开手机或电脑会自动同步。'
+    : '登录或注册后，这台设备会保持登录两天；打开、回到前台和每 10 分钟都会自动同步。';
   elements.syncLastSession.textContent = session?.expiresAt
-    ? `本次登录有效至 ${new Date(session.expiresAt).toLocaleString('zh-CN')}`
+    ? `登录记忆至 ${new Date(session.rememberUntil).toLocaleString('zh-CN')}`
     : '';
   elements.accountDialogCopy.textContent = session
     ? '同一邮箱登录手机和电脑后，日记会自动合并到这个账号。'
@@ -1324,7 +1376,7 @@ function renderCloudSyncDialog() {
   elements.syncAccountMessage.textContent = session
     ? (accountId && accountId !== session.user.id
       ? '检测到本机曾使用其他账号。立即同步时会先让你确认是否合并。'
-      : (hasCloudChanges() ? '本机有新内容等待上传。' : '本机与云端已处于同步状态。'))
+      : (hasCloudChanges() ? '本机有新内容等待上传。' : '登录、返回前台和每 10 分钟都会自动同步。'))
     : '登录后，日记、当天摘要与跨日汇总会保存到你的云端账号。';
   elements.syncDialogCopy.textContent = session
     ? '这里仅处理跨设备同步，不修改你的日记内容。'
@@ -1417,6 +1469,7 @@ function sessionFromAuthCallback(params, user) {
     expiresAt: Number.isFinite(expiresAt)
       ? expiresAt * 1000
       : Date.now() + (Number.isFinite(expiresIn) ? expiresIn : 3600) * 1000,
+    rememberUntil: Date.now() + SESSION_REMEMBER_MS,
   };
 }
 
@@ -1481,7 +1534,7 @@ async function refreshCloudSession() {
   const existing = state.cloud.session;
   if (!existing?.refreshToken) return null;
   const payload = await cloudAuthRequest('/auth/v1/token?grant_type=refresh_token', { refresh_token: existing.refreshToken });
-  const session = sessionFromPayload(payload);
+  const session = sessionFromPayload(payload, existing.rememberUntil);
   if (!session) throw new Error('登录状态已过期，请重新登录');
   storeCloudSession(session);
   return session;
@@ -1490,6 +1543,11 @@ async function refreshCloudSession() {
 async function activeCloudSession() {
   const session = state.cloud.session;
   if (!session) throw new Error('请先登录同步账号');
+  if (!session.rememberUntil || session.rememberUntil <= Date.now()) {
+    storeCloudSession(null);
+    stopCloudAutoSync();
+    throw new Error('登录记忆已到期，请重新登录');
+  }
   if (session.expiresAt && session.expiresAt > Date.now() + 60_000) return session;
   return refreshCloudSession();
 }
@@ -1704,48 +1762,57 @@ async function pushCloudChanges() {
 }
 
 async function syncCloud({ quiet = false } = {}) {
-  if (!isCloudConfigured() || !state.cloud.session || state.cloud.syncing) return;
+  if (!isCloudConfigured() || !state.cloud.session) return;
+  if (state.cloud.syncing) return state.cloud.syncPromise;
   state.cloud.syncing = true;
-  renderCloudSyncDialog();
-  try {
-    const session = await activeCloudSession();
-    const meta = state.data.cloudSync ?? (state.data.cloudSync = emptyCloudMeta());
-    if (meta.accountId !== session.user.id) {
-      if (meta.accountId) {
-        if (quiet) return;
-        const approved = window.confirm(
-          '检测到设备上保留着另一个同步账号的数据。为防止日记串号，默认不会上传。\n\n确认后，当前本地日记会合并并上传到新账号；取消则保持本地数据不变，建议先导出备份。'
-        );
-        if (!approved) {
-          renderCloudSyncDialog();
-          return;
-        }
-      }
-      meta.accountId = session.user.id;
-      markAllCloudDirty();
-      persistData({ queue: false });
-    }
-    await pullCloudData();
-    await pushCloudChanges();
-    persistData({ queue: false });
-    render();
-    renderCloudDialogs();
-    if (!quiet) {
-      recordCloudActivity('手动同步完成', 'success');
-      showToast('云端内容已同步');
-    }
-  } catch (error) {
+  const task = (async () => {
     renderCloudSyncDialog();
-    if (!quiet) {
-      const message = error instanceof Error ? error.message : '未知错误';
-      recordCloudActivity(`同步失败：${message}`, 'error');
-      showToast(message.includes('stale update')
-        ? '检测到另一台设备的较新版本：已停止上传以防覆盖，请先导出本机内容后刷新同步。'
-        : `同步失败：${message}`);
+    try {
+      const session = await activeCloudSession();
+      const meta = state.data.cloudSync ?? (state.data.cloudSync = emptyCloudMeta());
+      if (meta.accountId !== session.user.id) {
+        if (meta.accountId) {
+          if (quiet) return;
+          const approved = window.confirm(
+            '检测到设备上保留着另一个同步账号的数据。为防止日记串号，默认不会上传。\n\n确认后，当前本地日记会合并并上传到新账号；取消则保持本地数据不变，建议先导出备份。'
+          );
+          if (!approved) {
+            renderCloudSyncDialog();
+            return;
+          }
+        }
+        meta.accountId = session.user.id;
+        markAllCloudDirty();
+        persistData({ queue: false });
+      }
+      await pullCloudData();
+      await pushCloudChanges();
+      persistData({ queue: false });
+      render();
+      renderCloudDialogs();
+      if (!quiet) {
+        recordCloudActivity('手动同步完成', 'success');
+        showToast('云端内容已同步');
+      }
+    } catch (error) {
+      renderCloudSyncDialog();
+      if (!quiet) {
+        const message = error instanceof Error ? error.message : '未知错误';
+        recordCloudActivity(`同步失败：${message}`, 'error');
+        showToast(message.includes('stale update')
+          ? '检测到另一台设备的较新版本：已停止上传以防覆盖，请先导出本机内容后刷新同步。'
+          : `同步失败：${message}`);
+      }
+    } finally {
+      state.cloud.syncing = false;
+      renderCloudDialogs();
     }
+  })();
+  state.cloud.syncPromise = task;
+  try {
+    return await task;
   } finally {
-    state.cloud.syncing = false;
-    renderCloudDialogs();
+    state.cloud.syncPromise = null;
   }
 }
 
@@ -1753,6 +1820,23 @@ function queueCloudSync() {
   if (!isCloudConfigured() || !state.cloud?.session || !hasCloudChanges()) return;
   clearTimeout(state.cloud.syncTimer);
   state.cloud.syncTimer = setTimeout(() => syncCloud({ quiet: true }), 650);
+}
+
+function startCloudAutoSync() {
+  clearInterval(state.cloud.autoSyncTimer);
+  state.cloud.autoSyncTimer = 0;
+  if (!state.cloud.session || !isCloudConfigured()) return;
+  state.cloud.autoSyncTimer = window.setInterval(() => syncCloud({ quiet: true }), AUTO_SYNC_INTERVAL_MS);
+}
+
+function stopCloudAutoSync() {
+  clearInterval(state.cloud.autoSyncTimer);
+  state.cloud.autoSyncTimer = 0;
+}
+
+function syncBeforeLeaving() {
+  if (!state.cloud.session || state.cloud.syncing) return;
+  void syncCloud({ quiet: true });
 }
 
 async function signInCloud() {
@@ -1765,6 +1849,7 @@ async function signInCloud() {
     const session = sessionFromPayload(payload);
     if (!session) throw new Error('登录结果缺少会话信息');
     storeCloudSession(session);
+    startCloudAutoSync();
     elements.syncPassword.value = '';
     recordCloudActivity('登录成功', 'success');
     await syncCloud();
@@ -1791,6 +1876,7 @@ async function signUpCloud() {
     const session = sessionFromPayload(payload);
     if (session) {
       storeCloudSession(session);
+      startCloudAutoSync();
       elements.syncPassword.value = '';
       recordCloudActivity('注册并登录成功', 'success');
       await syncCloud();
@@ -1810,8 +1896,9 @@ async function signUpCloud() {
 }
 
 async function signOutCloud() {
-  const session = state.cloud.session;
   try {
+    await syncCloud({ quiet: true });
+    const session = state.cloud.session;
     if (session) {
       await fetch(cloudUrl('/auth/v1/logout'), {
         method: 'POST',
@@ -1823,6 +1910,7 @@ async function signOutCloud() {
     }
   } finally {
     storeCloudSession(null);
+    stopCloudAutoSync();
     recordCloudActivity('已退出同步账号', 'info');
     renderCloudDialogs();
     showToast('已退出同步账号，本地日记仍保留');
@@ -1830,9 +1918,10 @@ async function signOutCloud() {
 }
 
 async function initializeCloudSync() {
-  if (await restoreCloudSessionFromAuthCallback()) return;
+  const restoredFromCallback = await restoreCloudSessionFromAuthCallback();
   renderCloudDialogs();
-  if (state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
+  startCloudAutoSync();
+  if (!restoredFromCallback && state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
 }
 
 function bindEvents() {
@@ -1860,6 +1949,11 @@ function bindEvents() {
   elements.clearSyncActivity.addEventListener('click', clearCloudActivity);
   window.addEventListener('online', () => syncCloud({ quiet: true }));
   window.addEventListener('focus', () => syncCloud({ quiet: true }));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') syncBeforeLeaving();
+    if (document.visibilityState === 'visible') syncCloud({ quiet: true });
+  });
+  window.addEventListener('pagehide', syncBeforeLeaving);
   elements.closePeriodSummaryDialog.addEventListener('click', closePeriodSummaryDialog);
   elements.closeSearchDialog.addEventListener('click', closeSearchDialog);
   closeDialogOnBackdrop(elements.periodSummaryDialog, closePeriodSummaryDialog);
@@ -1884,9 +1978,6 @@ function bindEvents() {
   elements.applyAiSuggestion.addEventListener('click', applyAiSuggestion);
   elements.dismissAiSuggestion.addEventListener('click', dismissAiSuggestion);
   elements.saveEntry.addEventListener('click', saveNewEntry);
-  elements.newEntryFocus.addEventListener('click', () => elements.entryContent.focus());
-  elements.summarizeDay.addEventListener('click', summarizeDay);
-  elements.editSummaryPrompt.addEventListener('click', () => openPromptEditor('summary'));
   elements.previousMonth.addEventListener('click', () => {
     state.visibleMonth = new Date(state.visibleMonth.getFullYear(), state.visibleMonth.getMonth() - 1, 1);
     renderCalendar();
@@ -1964,5 +2055,5 @@ render();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260811-auth-callback'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260811-auto-sync-layout'));
 }
