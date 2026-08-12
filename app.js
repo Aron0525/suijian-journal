@@ -13,6 +13,8 @@ const MAX_ENTRY_CONTENT_CHARS = 10000;
 const MAX_SUMMARY_CHARS = 60000;
 const SESSION_REMEMBER_MS = 2 * 24 * 60 * 60 * 1000;
 const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+const MOBILE_OTA_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/app-update.json';
+const MOBILE_OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 let runtimeAiApiKey = '';
 const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
@@ -65,6 +67,7 @@ const state = {
   promptEditorType: 'organize',
   archiveJumpDate: '',
   cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0 },
+  nativeUpdate: { checking: false, timer: 0, readyPromise: null },
 };
 
 const elements = {
@@ -1329,7 +1332,7 @@ function renderCloudAccountDialog() {
   elements.accountDialogCopy.textContent = session
     ? '同一邮箱登录手机和电脑后，日记会自动合并到这个账号。'
     : '注册一个账号后，即可把日记同步到其他设备。';
-  elements.cloudAccountButton.textContent = session ? '账号' : '登录';
+  elements.cloudAccountButton.textContent = '账号';
   elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
 }
 
@@ -1369,7 +1372,12 @@ function openCloudAccountDialog() {
 }
 
 function handleCloudSyncButton() {
-  openCloudSyncDialog();
+  if (!state.cloud.session) {
+    showToast('请先在“账号”中登录后再同步');
+    return;
+  }
+  if (!ensureCloudConfigured()) return;
+  void syncCloud();
 }
 
 function closeCloudSyncDialog() {
@@ -1890,6 +1898,66 @@ async function initializeCloudSync() {
   if (!restoredFromCallback && state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
 }
 
+function nativeUpdater() {
+  const capacitor = window.Capacitor;
+  if (!capacitor?.isNativePlatform?.()) return null;
+  return capacitor.Plugins?.CapacitorUpdater ?? capacitor.registerPlugin?.('CapacitorUpdater') ?? null;
+}
+
+function isTrustedMobileUpdate(manifest) {
+  if (!manifest || typeof manifest.version !== 'string' || typeof manifest.url !== 'string' || typeof manifest.checksum !== 'string') return false;
+  if (!/^mobile-ota-[a-f0-9]{16}$/.test(manifest.version) || !/^[a-f0-9]{64}$/.test(manifest.checksum)) return false;
+  try {
+    const url = new URL(manifest.url);
+    const base = new URL(MOBILE_OTA_MANIFEST_URL);
+    return url.origin === base.origin
+      && url.pathname === `/suijian-journal/updates/suijian-web-${manifest.version}.zip`;
+  } catch {
+    return false;
+  }
+}
+
+function notifyNativeBundleReady(updater) {
+  if (state.nativeUpdate.readyPromise) return state.nativeUpdate.readyPromise;
+  state.nativeUpdate.readyPromise = updater.notifyAppReady().catch(() => undefined);
+  return state.nativeUpdate.readyPromise;
+}
+
+async function checkNativeAppUpdate({ quiet = true } = {}) {
+  const updater = nativeUpdater();
+  if (!updater || state.nativeUpdate.checking) return;
+  state.nativeUpdate.checking = true;
+  try {
+    await notifyNativeBundleReady(updater);
+    const response = await fetch(MOBILE_OTA_MANIFEST_URL, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`更新清单请求失败：${response.status}`);
+    const manifest = await response.json();
+    if (!isTrustedMobileUpdate(manifest)) throw new Error('更新清单格式无效');
+
+    const [current, pending] = await Promise.all([updater.current(), updater.getNextBundle()]);
+    if ([current?.bundle?.version, pending?.version].includes(manifest.version)) return;
+
+    const bundle = await updater.download({ url: manifest.url, version: manifest.version, checksum: manifest.checksum });
+    await updater.next({ id: bundle.id });
+    if (!quiet) showToast('新版已下载，退出或重开 App 后会自动启用');
+  } catch (error) {
+    // 保留当前已验证的本地版本；下次启动、回到前台或定时检查时会重试。
+    console.info('Mobile update check skipped', error instanceof Error ? error.message : error);
+  } finally {
+    state.nativeUpdate.checking = false;
+  }
+}
+
+function initializeNativeUpdates() {
+  const updater = nativeUpdater();
+  if (!updater) return;
+  // This runs before cloud/API work so a newly switched bundle can prove it booted.
+  void notifyNativeBundleReady(updater);
+  void checkNativeAppUpdate({ quiet: true });
+  clearInterval(state.nativeUpdate.timer);
+  state.nativeUpdate.timer = window.setInterval(() => void checkNativeAppUpdate({ quiet: true }), MOBILE_OTA_CHECK_INTERVAL_MS);
+}
+
 function bindEvents() {
   elements.navLinks.forEach((link) => link.addEventListener('click', () => {
     state.view = link.dataset.view;
@@ -1913,11 +1981,20 @@ function bindEvents() {
   elements.syncNowButton.addEventListener('click', () => syncCloud());
   elements.syncSignOut.addEventListener('click', signOutCloud);
   elements.clearSyncActivity.addEventListener('click', clearCloudActivity);
-  window.addEventListener('online', () => syncCloud({ quiet: true }));
-  window.addEventListener('focus', () => syncCloud({ quiet: true }));
+  window.addEventListener('online', () => {
+    syncCloud({ quiet: true });
+    void checkNativeAppUpdate({ quiet: true });
+  });
+  window.addEventListener('focus', () => {
+    syncCloud({ quiet: true });
+    void checkNativeAppUpdate({ quiet: true });
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') syncBeforeLeaving();
-    if (document.visibilityState === 'visible') syncCloud({ quiet: true });
+    if (document.visibilityState === 'visible') {
+      syncCloud({ quiet: true });
+      void checkNativeAppUpdate({ quiet: true });
+    }
   });
   window.addEventListener('pagehide', syncBeforeLeaving);
   elements.closePeriodSummaryDialog.addEventListener('click', closePeriodSummaryDialog);
@@ -2017,8 +2094,9 @@ function bindEvents() {
 
 bindEvents();
 render();
+void initializeNativeUpdates();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260811-archive-jump'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260812-mobile-ota'));
 }

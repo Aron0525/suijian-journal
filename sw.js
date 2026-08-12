@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v23';
-const RELEASE = '20260811-archive-jump';
+const CACHE_NAME = 'suijian-pwa-v24';
+const RELEASE = '20260812-mobile-ota';
 const ASSETS = [
   './',
   './index.html',

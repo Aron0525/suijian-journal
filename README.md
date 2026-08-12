@@ -65,6 +65,7 @@ Android 已使用 Capacitor 原生壳打包，安装包内置 `dist-mobile/` 的
 
 - 手机安装：将 APK 传到 Android 手机，打开文件并允许本次“安装未知应用来源”，安装后桌面会出现“岁笺”。
 - 数据：登录与同步仍连接 Supabase；AI 功能仍连接已配置的模型 API；网页资源由 GitHub Pages 发布。
+- 自动更新：安装本次 APK 后，App 会在启动、回到前台、网络恢复及每 10 分钟检查 GitHub Pages 的更新清单；新网页包通过 SHA-256 校验后下载，并在 App 退出、切到后台或下次重开时自动启用。更新异常会继续使用上一份已验证的页面包。
 - 重新打包：在已安装 JDK 21 与 Android SDK 的电脑上运行 `./build-android-apk.sh`。
 - 回退构建改动：运行 `./rollback-android-apk.sh`。
 

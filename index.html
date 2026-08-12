@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; worker-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co https://aron0525.github.io; worker-src 'self'" />
     <meta name="theme-color" content="#173f3a" />
     <meta name="description" content="一个本地优先、可离线使用的日历日记 PWA。" />
     <link rel="manifest" href="./manifest.webmanifest" />
@@ -22,20 +22,16 @@
         </a>
         <div class="top-actions" aria-label="工具栏">
           <div class="top-tools">
+            <button id="search-panel-button" class="workspace-action" type="button">搜索</button>
             <button id="summary-panel-button" class="workspace-action" type="button">汇总</button>
-            <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
-            <button id="model-config-button" class="text-button">模型配置</button>
-            <button id="export-button" class="text-button">导出</button>
-            <label class="text-button import-label" for="import-input">导入</label>
+            <button id="export-button" class="workspace-action" type="button">导出</button>
+            <label class="workspace-action import-label" for="import-input">导入</label>
             <input id="import-input" type="file" accept="application/json,.json" hidden />
+            <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
+            <button id="model-config-button" class="workspace-action" type="button">模型配置</button>
+            <button id="cloud-account-button" class="workspace-action account-action" type="button">账号</button>
           </div>
-          <div class="top-account-actions">
-            <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
-            <button id="search-panel-button" class="icon-button search-action" type="button" aria-label="搜索日记">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="5.8"></circle><path d="m15.2 15.2 4.1 4.1"></path></svg>
-            </button>
-            <button id="cloud-account-button" class="workspace-action account-action" type="button">登录</button>
-          </div>
+          <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
         </div>
       </header>
 
@@ -359,6 +355,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260811-archive-jump" defer></script>
+    <script src="./app.js?release=20260812-mobile-ota" defer></script>
   </body>
 </html>

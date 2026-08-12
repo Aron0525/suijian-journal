@@ -32,16 +32,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .nav-link { padding: 8px 14px; color: var(--ink-soft); font-size: 14px; }
 .nav-link.active { color: var(--ink); font-weight: 700; }
 .nav-link.active::after { display: block; width: 4px; height: 4px; margin: 3px auto 0; border-radius: 50%; background: var(--clay); content: ""; }
-.top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; font-size: 13px; }
-.top-tools, .top-account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
-.top-account-actions { padding-left: 14px; border-left: 1px solid var(--line); }
+.top-actions { display: grid; justify-items: end; gap: 5px; font-size: 13px; }
+.top-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
 .workspace-action { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: rgba(255,252,246,.42); font-size: 12px; transition: color .2s, border-color .2s, background .2s, transform .2s; }
 .workspace-action:hover { border-color: var(--clay); color: var(--clay-deep); background: rgba(198,109,76,.08); transform: translateY(-1px); }
 .sync-status { color: var(--ink-soft); font-family: "DM Mono", monospace; font-size: 11px; }
-.search-action { flex: 0 0 auto; width: 34px; height: 34px; border-color: transparent; color: var(--ink-soft); background: transparent; }
-.search-action:hover { border-color: var(--line); color: var(--clay-deep); background: rgba(198,109,76,.08); }
-.search-action svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
 .text-button, .import-label { padding: 5px 1px; color: var(--ink-soft); font-size: 13px; text-decoration: none; }
+.top-tools .workspace-action.import-label { padding: 7px 10px; color: var(--ink); background: rgba(255,252,246,.42); }
+.top-tools .workspace-action.import-label:hover { color: var(--clay-deep); }
 .text-button:hover, .import-label:hover, .quiet-button:hover { color: var(--clay-deep); }
 .import-label { cursor: pointer; }
 
@@ -165,11 +163,10 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .brand-mark { width: 36px; height: 36px; font-size: 18px; }
   .nav-links { gap: 0; }
   .nav-link { padding: 8px 7px; font-size: 12px; }
-  .top-actions { width: 100%; max-width: none; align-items: stretch; flex-direction: column; gap: 8px; }
-  .top-tools, .top-account-actions { justify-content: space-between; gap: 7px; }
-  .top-account-actions { padding-left: 0; border-left: 0; }
+  .top-actions { width: 100%; max-width: none; justify-items: stretch; gap: 0; }
+  .top-tools { justify-content: flex-start; gap: 6px; }
   .workspace-action { padding: 5px 8px; }
-  .sync-status, #export-button { display: none; }
+  .sync-status { display: none; }
   .view { padding-top: 42px; }
   .hero-row, .section-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
   .hero-row { margin-bottom: 22px; }

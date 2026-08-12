@@ -1,19 +1,32 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index, schema, styles] = await Promise.all([
+const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index, indexHtm, schema, styles, capacitorConfig, mobileBuildScript, packageJson] = await Promise.all([
   readFile(new URL('../app.js', import.meta.url), 'utf8'),
   readFile(new URL('../sw.js', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/functions/ai-proxy/index.ts', import.meta.url), 'utf8'),
   readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8'),
   readFile(new URL('../manifest.webmanifest', import.meta.url), 'utf8'),
   readFile(new URL('../index.html', import.meta.url), 'utf8'),
+  readFile(new URL('../index.htm', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8'),
   readFile(new URL('../styles.css', import.meta.url), 'utf8'),
+  readFile(new URL('../capacitor.config.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/build-mobile-web.mjs', import.meta.url), 'utf8'),
+  readFile(new URL('../package.json', import.meta.url), 'utf8'),
 ]);
+
+assert.equal(indexHtm, index, 'index.htm is the installed PWA entry point and must match index.html');
 
 assert.match(app, /const SESSION_REMEMBER_MS = 2 \* 24 \* 60 \* 60 \* 1000/);
 assert.match(app, /const AUTO_SYNC_INTERVAL_MS = 10 \* 60 \* 1000/);
+assert.match(app, /const MOBILE_OTA_MANIFEST_URL = 'https:\/\/aron0525\.github\.io\/suijian-journal\/app-update\.json'/);
+assert.match(app, /function nativeUpdater\(\)/);
+assert.match(app, /async function checkNativeAppUpdate\(\{ quiet = true \} = \{\}\)/);
+assert.match(app, /updater\.download\(\{ url: manifest\.url, version: manifest\.version, checksum: manifest\.checksum \}\)/);
+assert.match(app, /updater\.next\(\{ id: bundle\.id \}\)/);
+assert.match(app, /updater\.notifyAppReady\(\)/);
+assert.match(app, /void initializeNativeUpdates\(\)/);
 assert.match(app, /localStorage\.setItem\(CLOUD_SESSION_KEY/);
 assert.match(app, /sessionStorage\.removeItem\(CLOUD_SESSION_KEY/);
 assert.match(app, /rememberUntil/);
@@ -33,6 +46,11 @@ assert.match(app, /账号已切换，等待确认/);
 assert.match(app, /cloudAccountButton/);
 assert.match(app, /function openCloudAccountDialog\(\)/);
 assert.match(app, /function openCloudSyncDialog\(\)/);
+assert.match(app, /function handleCloudSyncButton\(\) \{\s*if \(!state\.cloud\.session\)/);
+const directSyncHandler = app.match(/function handleCloudSyncButton\(\) \{[\s\S]+?\n\}/)?.[0] ?? '';
+assert.ok(directSyncHandler, 'direct sync handler should exist');
+assert.match(directSyncHandler, /void syncCloud\(\)/);
+assert.doesNotMatch(directSyncHandler, /openCloudSyncDialog/);
 assert.match(app, /syncOpenAccount/);
 assert.doesNotMatch(app, /syncConfigForm/);
 assert.match(app, /function recordCloudActivity\(message/);
@@ -40,13 +58,14 @@ assert.match(app, /persistDataChange/);
 assert.doesNotMatch(serviceWorker, /caches\.match\(event\.request\)/);
 assert.match(serviceWorker, /if \(url\.origin !== self\.location\.origin\) return/);
 assert.match(serviceWorker, /cache: 'no-store'/);
-assert.match(serviceWorker, /suijian-pwa-v23/);
-assert.match(index, /app\.js\?release=20260811-archive-jump/);
+assert.match(serviceWorker, /suijian-pwa-v24/);
+assert.match(index, /app\.js\?release=20260812-mobile-ota/);
 assert.match(index, /id="account-dialog"/);
 assert.match(index, /id="sync-dialog"/);
 assert.match(index, /id="sync-open-account"/);
 assert.doesNotMatch(index, /id="supabase-url"/);
-assert.match(app, /sw\.js\?release=20260811-archive-jump/);
+assert.match(app, /sw\.js\?release=20260812-mobile-ota/);
+assert.match(index, /connect-src 'self' https:\/\/\*\.supabase\.co https:\/\/aron0525\.github\.io/);
 assert.match(edgeFunction, /parsed\.protocol !== 'https:'/);
 assert.match(edgeFunction, /allowedAiHosts\(\)\.has/);
 assert.match(edgeFunction, /createSupabaseContext\(request, \{ auth: 'user' \}\)/);
@@ -64,8 +83,10 @@ assert.doesNotMatch(index, /id="calendar-filter-end"/);
 const archiveMarkup = index.match(/<section class="archive-section"[\s\S]+?<\/section>\n\s*<\/section>\n\s*<\/section>/)?.[0] ?? '';
 assert.ok(archiveMarkup, 'calendar archive markup should exist');
 assert.doesNotMatch(archiveMarkup, /日期范围/);
-assert.match(index, /aria-label="搜索日记"/);
-assert.match(index, /id="cloud-account-button"[^>]*>登录</);
+const topTools = index.match(/<div class="top-tools">([\s\S]+?)<\/div>/)?.[1] ?? '';
+assert.match(topTools, /search-panel-button[\s\S]*summary-panel-button[\s\S]*export-button[\s\S]*import-input[\s\S]*cloud-sync-button[\s\S]*model-config-button[\s\S]*cloud-account-button/);
+assert.match(index, /id="cloud-account-button"[^>]*>账号</);
+assert.doesNotMatch(styles, /#export-button\s*\{\s*display:\s*none;/);
 assert.doesNotMatch(index, /id="day-summary"/);
 assert.doesNotMatch(index, /id="entry-list"/);
 assert.doesNotMatch(index, /今天的片段/);
@@ -81,6 +102,12 @@ assert.match(styles, /\.calendar-archive-list\s*\{[^}]*max-height:\s*none;/);
 assert.match(githubPagesWorkflow, /actions\/upload-pages-artifact@v3/);
 assert.match(githubPagesWorkflow, /path: dist-mobile/);
 assert.match(githubPagesWorkflow, /actions\/deploy-pages@v4/);
+assert.match(capacitorConfig, /CapacitorUpdater/);
+assert.match(capacitorConfig, /autoUpdate: 'off'/);
+assert.match(mobileBuildScript, /app-update\.json/);
+assert.match(mobileBuildScript, /suijian-web-\$\{release\}\.zip/);
+assert.match(mobileBuildScript, /createHash\('sha256'\)/);
+assert.match(packageJson, /"@capgo\/capacitor-updater"/);
 assert.match(manifest, /"start_url": "\.\/index\.htm"/);
 assert.match(manifest, /"scope": "\.\/"/);
 

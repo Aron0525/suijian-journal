@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; worker-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co https://aron0525.github.io; worker-src 'self'" />
     <meta name="theme-color" content="#173f3a" />
     <meta name="description" content="一个本地优先、可离线使用的日历日记 PWA。" />
     <link rel="manifest" href="./manifest.webmanifest" />
@@ -21,15 +21,17 @@
           <span>岁笺</span>
         </a>
         <div class="top-actions" aria-label="工具栏">
+          <div class="top-tools">
+            <button id="search-panel-button" class="workspace-action" type="button">搜索</button>
+            <button id="summary-panel-button" class="workspace-action" type="button">汇总</button>
+            <button id="export-button" class="workspace-action" type="button">导出</button>
+            <label class="workspace-action import-label" for="import-input">导入</label>
+            <input id="import-input" type="file" accept="application/json,.json" hidden />
+            <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
+            <button id="model-config-button" class="workspace-action" type="button">模型配置</button>
+            <button id="cloud-account-button" class="workspace-action account-action" type="button">账号</button>
+          </div>
           <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
-          <button id="cloud-account-button" class="workspace-action account-action" type="button">登录</button>
-          <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
-          <button id="summary-panel-button" class="workspace-action" type="button">汇总</button>
-          <button id="search-panel-button" class="workspace-action" type="button">搜索</button>
-          <button id="model-config-button" class="text-button">模型配置</button>
-          <button id="export-button" class="text-button">导出</button>
-          <label class="text-button import-label" for="import-input">导入</label>
-          <input id="import-input" type="file" accept="application/json,.json" hidden />
         </div>
       </header>
 
@@ -81,71 +83,57 @@
             </div>
           </section>
 
-          <aside class="day-panel card" aria-labelledby="day-summary-title">
-            <div class="panel-heading compact">
+          <aside class="today-calendar card" aria-labelledby="today-calendar-title">
+            <div class="today-calendar-head">
               <div>
-                <p class="eyebrow">当天整理</p>
-                <h2 id="day-summary-title">今天的轮廓</h2>
+                <p class="eyebrow">时间坐标</p>
+                <h2 id="today-calendar-title">日历</h2>
               </div>
-              <div class="summary-actions">
-                <button id="edit-summary-prompt" class="prompt-button prompt-button-light" type="button">汇总提示词</button>
-                <button id="summarize-day" class="round-button" aria-label="AI 总结今天">✦</button>
+              <div class="calendar-controls">
+                <button id="previous-month" class="icon-button" aria-label="上个月">←</button>
+                <span id="month-label" class="month-label"></span>
+                <button id="next-month" class="icon-button" aria-label="下个月">→</button>
               </div>
             </div>
-            <div id="day-summary" class="summary-empty">
-              写下第一条记录后，可以在这里生成当天摘要。
+            <div class="weekday-row" aria-hidden="true">
+              <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
             </div>
-            <p class="summary-hint">当天汇总只生成独立摘要，不会改写任何日记原文。</p>
+            <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="日历"></div>
+            <p class="calendar-legend"><span class="legend-mark"></span>点击日期，跳转到对应的日记档案</p>
           </aside>
         </div>
 
-        <section class="entries-section" aria-labelledby="entries-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">日期档案</p>
-              <h2 id="entries-title">今天的片段</h2>
-            </div>
-            <button id="new-entry-focus" class="quiet-button">+ 新建记录</button>
-          </div>
-          <div id="entry-list" class="entry-list" aria-live="polite"></div>
-        </section>
         <section class="archive-section" aria-labelledby="calendar-title">
-        <div class="calendar-layout">
           <section class="calendar-archive card" aria-labelledby="calendar-title">
             <div class="calendar-archive-head">
               <div>
-                <p class="eyebrow">全部记录</p>
+                <p class="eyebrow">按最新时间排列</p>
                 <h1 id="calendar-title">日记档案</h1>
               </div>
               <span id="calendar-archive-count" class="calendar-archive-count">0 条记录</span>
             </div>
-            <div class="calendar-filter-bar" aria-label="日记筛选">
-              <button id="clear-calendar-filter" type="button" class="quiet-button">全部记录</button>
-              <label>单日<input id="calendar-filter-date" type="date" /></label>
-              <label>日期范围<input id="calendar-filter-start" type="date" /><span>至</span><input id="calendar-filter-end" type="date" /></label>
+            <section class="writing-rhythm" aria-label="写作轨迹">
+              <div class="writing-rhythm-item">
+                <strong id="writing-streak">0 天</strong>
+                <span>连续记录</span>
+              </div>
+              <div class="writing-rhythm-item">
+                <strong id="writing-month-days">0 天</strong>
+                <span>本月天数</span>
+              </div>
+              <div class="writing-rhythm-item">
+                <strong id="writing-total-days">0 天</strong>
+                <span>累计天数</span>
+              </div>
+            </section>
+            <div class="archive-jump-bar" aria-label="日记档案跳转">
+              <label for="archive-jump-date">跳转到日期</label>
+              <input id="archive-jump-date" type="date" />
+              <button id="archive-jump-button" type="button" class="quiet-button">跳转</button>
             </div>
-            <p id="calendar-filter-status" class="calendar-filter-status">按时间从新到旧排列</p>
+            <p id="calendar-filter-status" class="calendar-filter-status">全部日记 · 按时间从新到旧排列</p>
             <div id="calendar-archive-list" class="calendar-archive-list" aria-live="polite"></div>
           </section>
-
-          <aside class="calendar-sidebar" aria-label="日期选择">
-            <section class="calendar-card card">
-              <div class="calendar-sidebar-head">
-                <p class="eyebrow">选择日期</p>
-                <div class="calendar-controls">
-                  <button id="previous-month" class="icon-button" aria-label="上个月">←</button>
-                  <span id="month-label" class="month-label"></span>
-                  <button id="next-month" class="icon-button" aria-label="下个月">→</button>
-                </div>
-              </div>
-              <div class="weekday-row" aria-hidden="true">
-                <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
-              </div>
-              <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="日历"></div>
-              <p class="calendar-legend"><span class="legend-mark"></span>点击日期筛选当天记录</p>
-            </section>
-          </aside>
-        </div>
         </section>
       </section>
     </main>
@@ -231,6 +219,42 @@
       </div>
     </dialog>
 
+    <dialog id="account-dialog" class="workspace-dialog sync-dialog account-dialog" aria-labelledby="account-dialog-title">
+      <div class="workspace-dialog-body">
+        <button id="close-account-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭账号窗口">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">你的数据身份</p>
+            <h1 id="account-dialog-title">登录或注册</h1>
+          </div>
+        </div>
+        <p id="account-dialog-copy" class="dialog-copy">注册一个账号后，即可把日记同步到其他设备。</p>
+        <section id="sync-auth-panel" class="sync-card card">
+          <div class="sync-card-head">
+            <div><span class="prompt-kicker">同步账号</span><strong>账号登录</strong></div>
+            <span id="sync-account-status" class="sync-config-status">未登录</span>
+          </div>
+          <p id="sync-auth-copy" class="sync-auth-copy">注册后会立即登录并开始同步。</p>
+          <form id="sync-auth-form" class="sync-auth-form">
+            <label>邮箱<input id="sync-email" type="email" required autocomplete="email" placeholder="name@example.com" /></label>
+            <label>密码<input id="sync-password" type="password" required minlength="8" autocomplete="current-password" placeholder="至少 8 位" /></label>
+            <div class="sync-auth-actions">
+              <button id="sync-sign-in" type="button" class="primary-button">登录</button>
+              <button id="sync-sign-up" type="button" class="quiet-button">注册新账号</button>
+            </div>
+          </form>
+          <div id="sync-signed-in" class="sync-signed-in" hidden>
+            <p>当前账号：<strong id="sync-account-email"></strong></p>
+            <p id="sync-last-session" class="sync-session-copy"></p>
+            <div class="sync-auth-actions">
+              <button id="sync-sign-out" type="button" class="quiet-button">退出账号</button>
+            </div>
+          </div>
+        </section>
+        <p class="dialog-note">账号仅用于区分你的云端数据；日记内容由账号数据规则隔离。</p>
+      </div>
+    </dialog>
+
     <dialog id="sync-dialog" class="workspace-dialog sync-dialog" aria-labelledby="sync-dialog-title">
       <div class="workspace-dialog-body">
         <button id="close-sync-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭云同步窗口">×</button>
@@ -240,50 +264,35 @@
             <h1 id="sync-dialog-title">云同步</h1>
           </div>
         </div>
-        <p id="sync-dialog-copy" class="dialog-copy">同一邮箱登录手机和电脑后，日记会保存到你的云端账号。</p>
-        <section class="sync-card card">
-          <form id="sync-config-form" class="sync-config-form">
-            <div class="sync-card-head">
-              <div><span class="prompt-kicker">连接信息</span><strong>Supabase 项目</strong></div>
-              <span id="sync-config-status" class="sync-config-status">待配置</span>
-            </div>
-            <label>项目地址<input id="supabase-url" type="url" required autocomplete="url" /></label>
-            <label>Publishable Key<input id="supabase-publishable-key" type="password" required autocomplete="off" placeholder="sb_publishable_…" /></label>
-            <p class="sync-help">在 Supabase 的 Settings → API keys 中复制 Publishable Key。此 Key 用于前端连接，日记访问仍由你的账号和数据表规则控制。</p>
-            <button type="submit" class="quiet-button sync-save-config">保存连接信息</button>
-          </form>
+        <p id="sync-dialog-copy" class="dialog-copy">请先登录账号，再开始跨设备同步。</p>
+        <section class="sync-state-card card" aria-live="polite">
+          <span class="sync-state-mark" aria-hidden="true"></span>
+          <div>
+            <span class="prompt-kicker">当前同步账号</span>
+            <strong id="sync-account-brief">尚未登录同步账号</strong>
+            <p id="sync-account-message">登录后，日记、当天摘要与跨日汇总会保存到你的云端账号。</p>
+          </div>
         </section>
-        <section id="sync-auth-panel" class="sync-card card">
-          <div class="sync-card-head">
-            <div><span class="prompt-kicker">你的同步账号</span><strong>登录或注册</strong></div>
-            <span id="sync-account-status" class="sync-config-status">未登录</span>
+        <section id="sync-login-required" class="sync-gate card">
+          <h2>先登录，再同步</h2>
+          <p>账号窗口只处理登录和注册；登录完成后回到这里进行同步。</p>
+          <button id="sync-open-account" type="button" class="primary-button">去登录</button>
+        </section>
+        <section id="sync-active-panel" class="sync-gate card" hidden>
+          <div>
+            <h2>同步这台设备</h2>
+            <p>会先读取云端内容，再上传本机新增或更新的日记。</p>
           </div>
-          <p id="sync-auth-copy" class="sync-auth-copy">注册后请完成邮箱验证，再用同一邮箱登录。</p>
-          <form id="sync-auth-form" class="sync-auth-form">
-            <label>邮箱<input id="sync-email" type="email" required autocomplete="email" placeholder="name@example.com" /></label>
-            <label>密码<input id="sync-password" type="password" required minlength="8" autocomplete="current-password" placeholder="至少 8 位" /></label>
-            <div class="sync-auth-actions">
-              <button id="sync-sign-in" type="button" class="primary-button">登录并同步</button>
-              <button id="sync-sign-up" type="button" class="quiet-button">注册新账号</button>
-            </div>
-          </form>
-          <div id="sync-signed-in" class="sync-signed-in" hidden>
-            <p>当前账号：<strong id="sync-account-email"></strong></p>
-            <p id="sync-last-session" class="sync-session-copy"></p>
-            <div class="sync-auth-actions">
-              <button id="sync-now-button" type="button" class="primary-button">立即同步</button>
-              <button id="sync-sign-out" type="button" class="quiet-button">退出账号</button>
-            </div>
-          </div>
+          <button id="sync-now-button" type="button" class="primary-button">立即同步</button>
         </section>
         <section class="sync-card sync-activity-card card" aria-labelledby="sync-activity-title">
           <div class="sync-card-head">
-            <div><span class="prompt-kicker">窗口记录</span><strong id="sync-activity-title">账号与同步记录</strong></div>
+            <div><span class="prompt-kicker">本次设备记录</span><strong id="sync-activity-title">同步记录</strong></div>
             <button id="clear-sync-activity" type="button" class="quiet-button sync-clear-activity">清除记录</button>
           </div>
           <ol id="sync-activity-list" class="sync-activity-list" aria-live="polite"></ol>
         </section>
-        <p class="dialog-note">同步只上传日记、当天摘要和跨日汇总；草稿只保存在当前设备，模型 API Key 仅保留到本次页面会话结束。</p>
+        <p class="dialog-note">同步只处理日记、当天摘要和跨日汇总；草稿与模型 API Key 不会上传。</p>
       </div>
     </dialog>
 
@@ -346,6 +355,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js" defer></script>
+    <script src="./app.js?release=20260812-mobile-ota" defer></script>
   </body>
 </html>
