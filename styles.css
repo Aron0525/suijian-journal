@@ -107,11 +107,10 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 .writing-rhythm-item { display: grid; gap: 4px; padding: 14px 15px; background: rgba(255,252,246,.7); }
 .writing-rhythm-item strong { color: var(--ink); font-family: "Noto Serif SC", serif; font-size: 21px; line-height: 1.1; }
 .writing-rhythm-item span { color: var(--ink-soft); font-family: "DM Mono", monospace; font-size: 10px; }
-.calendar-filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; margin: 25px 0 0; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.calendar-filter-bar label { display: grid; gap: 6px; color: var(--ink-soft); font-size: 11px; }
-.calendar-filter-bar label:last-child { grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 6px; }
-.calendar-filter-bar input { width: 132px; min-height: 33px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: rgba(255,255,255,.5); font: inherit; }
-.calendar-filter-bar .quiet-button { color: var(--clay-deep); white-space: nowrap; }
+.archive-jump-bar { display: flex; align-items: center; gap: 10px; margin: 25px 0 0; padding: 15px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.archive-jump-bar label { color: var(--ink-soft); font-size: 11px; }
+.archive-jump-bar input { width: 146px; min-height: 33px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: rgba(255,255,255,.5); font: inherit; }
+.archive-jump-bar .quiet-button { padding: 7px 9px; border: 1px solid rgba(66,99,93,.36); border-radius: 999px; color: var(--clay-deep); white-space: nowrap; }
 .calendar-filter-status { margin: 14px 0; color: var(--ink-soft); font-family: "DM Mono", monospace; font-size: 10px; }
 .calendar-archive-list { display: grid; gap: 0; max-height: none; overflow: visible; padding-right: 0; }
 .calendar-archive-list::-webkit-scrollbar { width: 7px; }
@@ -188,10 +187,8 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .writing-rhythm-item { padding: 13px 11px; }
   .writing-rhythm-item strong { font-size: 19px; }
   .calendar-archive-list { max-height: none; padding-right: 0; }
-  .calendar-filter-bar { align-items: stretch; flex-direction: column; }
-  .calendar-filter-bar label, .calendar-filter-bar label:last-child { grid-template-columns: 1fr; }
-  .calendar-filter-bar label:last-child span { display: none; }
-  .calendar-filter-bar input { width: 100%; }
+  .archive-jump-bar { align-items: center; gap: 8px; margin-top: 20px; }
+  .archive-jump-bar input { flex: 1; min-width: 0; width: auto; }
   .calendar-day { min-height: 41px; padding: 6px; }
   .entry-ink { bottom: 5px; left: 6px; transform: scale(.7); transform-origin: left bottom; }
   .entry-mini-count { right: 6px; bottom: 4px; font-size: 8px; }

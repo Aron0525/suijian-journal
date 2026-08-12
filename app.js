@@ -63,7 +63,7 @@ const state = {
   visibleMonth: startOfMonth(new Date()),
   busy: false,
   promptEditorType: 'organize',
-  calendarFilter: { date: '', start: '', end: '' },
+  archiveJumpDate: '',
   cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0 },
 };
 
@@ -99,11 +99,9 @@ const elements = {
   writingStreak: document.querySelector('#writing-streak'),
   writingMonthDays: document.querySelector('#writing-month-days'),
   writingTotalDays: document.querySelector('#writing-total-days'),
-  calendarFilterDate: document.querySelector('#calendar-filter-date'),
-  calendarFilterStart: document.querySelector('#calendar-filter-start'),
-  calendarFilterEnd: document.querySelector('#calendar-filter-end'),
+  archiveJumpDate: document.querySelector('#archive-jump-date'),
+  archiveJumpButton: document.querySelector('#archive-jump-button'),
   calendarFilterStatus: document.querySelector('#calendar-filter-status'),
-  clearCalendarFilter: document.querySelector('#clear-calendar-filter'),
   periodStart: document.querySelector('#period-start'),
   periodEnd: document.querySelector('#period-end'),
   periodEntryCount: document.querySelector('#period-entry-count'),
@@ -482,51 +480,31 @@ function renderCalendar() {
     button.setAttribute('role', 'gridcell');
     button.setAttribute('aria-label', `${key}${count ? `，${count} 条记录` : ''}`);
     if (current.getMonth() !== month) button.classList.add('other-month');
-    if (key === state.calendarFilter.date || (!state.calendarFilter.date && key === state.activeDate)) button.classList.add('active-date');
+    if (key === (state.archiveJumpDate || state.activeDate)) button.classList.add('active-date');
     if (key === todayKey) button.classList.add('today-date');
     button.innerHTML = `<span class="day-number">${current.getDate()}</span>${count ? `<span class="entry-ink"></span><span class="entry-mini-count">${count}</span>` : ''}`;
     button.addEventListener('click', () => {
-      state.visibleMonth = startOfMonth(current);
-      state.calendarFilter = { date: key, start: '', end: '' };
-      renderCalendar();
-      renderCalendarArchive();
+      jumpToArchiveDate(key);
     });
     elements.calendarGrid.append(button);
   }
 }
 
 function calendarArchiveEntries() {
-  const { date, start, end } = state.calendarFilter;
-  if (start && end && start > end) return [];
   return [...state.data.entries]
     .filter((entry) => !entry.deletedAt)
-    .filter((entry) => !date || entry.date === date)
-    .filter((entry) => !start || !end || (entry.date >= start && entry.date <= end))
     .sort((a, b) => b.date.localeCompare(a.date) || new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function calendarFilterLabel(entries) {
-  const { date, start, end } = state.calendarFilter;
-  if (date) return `${date} · ${entries.length} 条记录`;
-  if (start && end && start > end) return '开始日期需要早于结束日期';
-  if (start && end) return `${start} 至 ${end} · ${entries.length} 条记录`;
-  if (start || end) return '请选择完整的开始和结束日期';
-  return `全部记录 · ${entries.length} 条`;
-}
-
 function renderCalendarArchive() {
-  const filter = state.calendarFilter;
-  elements.calendarFilterDate.value = filter.date;
-  elements.calendarFilterStart.value = filter.start;
-  elements.calendarFilterEnd.value = filter.end;
   const entries = calendarArchiveEntries();
   elements.calendarArchiveCount.textContent = `${entries.length} 条记录`;
-  elements.calendarFilterStatus.textContent = calendarFilterLabel(entries);
+  elements.calendarFilterStatus.textContent = `全部日记 · ${entries.length} 条 · 按时间从新到旧排列`;
   elements.calendarArchiveList.replaceChildren();
   if (!entries.length) {
     const empty = document.createElement('p');
     empty.className = 'calendar-archive-empty';
-    empty.textContent = filter.date || (filter.start && filter.end) ? '这个时间范围内还没有记录。' : '还没有日记记录。';
+    empty.textContent = '还没有日记记录。';
     elements.calendarArchiveList.append(empty);
     return;
   }
@@ -539,6 +517,7 @@ function renderCalendarArchive() {
   entriesByDate.forEach((dayEntries, date) => {
     const group = document.createElement('section');
     group.className = 'calendar-day-group';
+    group.dataset.archiveDate = date;
     const dayHead = document.createElement('div');
     dayHead.className = 'calendar-day-group-head';
     const dayLabel = document.createElement('h2');
@@ -572,26 +551,13 @@ function renderCalendarArchive() {
   });
 }
 
-function applyCalendarDateFilter(date) {
-  state.calendarFilter = { date, start: '', end: '' };
-  if (date) state.visibleMonth = startOfMonth(parseDateKey(date));
+function jumpToArchiveDate(date) {
+  if (!isDateKey(date)) return;
+  state.archiveJumpDate = date;
+  state.visibleMonth = startOfMonth(parseDateKey(date));
+  elements.archiveJumpDate.value = date;
   renderCalendar();
-  renderCalendarArchive();
-}
-
-function applyCalendarRangeFilter() {
-  const start = elements.calendarFilterStart.value;
-  const end = elements.calendarFilterEnd.value;
-  state.calendarFilter = { date: '', start, end };
-  if (start) state.visibleMonth = startOfMonth(parseDateKey(start));
-  renderCalendar();
-  renderCalendarArchive();
-}
-
-function clearCalendarFilter() {
-  state.calendarFilter = { date: '', start: '', end: '' };
-  renderCalendar();
-  renderCalendarArchive();
+  document.querySelector(`[data-archive-date="${date}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function defaultPeriodStart() {
@@ -677,8 +643,8 @@ function renderSearchResults() {
     result.innerHTML = `<div class="search-result-date">${entry.date}</div><h3>${escapeHtml(entry.title || '未命名片段')}</h3><p>${escapeHtml(entry.content)}</p>`;
     result.addEventListener('click', () => {
       state.activeDate = entry.date;
+      state.archiveJumpDate = entry.date;
       state.visibleMonth = startOfMonth(parseDateKey(entry.date));
-      state.calendarFilter = { date: entry.date, start: '', end: '' };
       state.view = 'today';
       closeSearchDialog();
       render();
@@ -1960,6 +1926,7 @@ function bindEvents() {
   closeDialogOnBackdrop(elements.searchDialog, closeSearchDialog);
   elements.goToday.addEventListener('click', () => {
     state.activeDate = localDateKey();
+    state.archiveJumpDate = state.activeDate;
     state.visibleMonth = startOfMonth(new Date());
     render();
   });
@@ -1986,10 +1953,8 @@ function bindEvents() {
     state.visibleMonth = new Date(state.visibleMonth.getFullYear(), state.visibleMonth.getMonth() + 1, 1);
     renderCalendar();
   });
-  elements.calendarFilterDate.addEventListener('change', () => applyCalendarDateFilter(elements.calendarFilterDate.value));
-  elements.calendarFilterStart.addEventListener('change', applyCalendarRangeFilter);
-  elements.calendarFilterEnd.addEventListener('change', applyCalendarRangeFilter);
-  elements.clearCalendarFilter.addEventListener('click', clearCalendarFilter);
+  elements.archiveJumpButton.addEventListener('click', () => jumpToArchiveDate(elements.archiveJumpDate.value));
+  elements.archiveJumpDate.addEventListener('change', () => jumpToArchiveDate(elements.archiveJumpDate.value));
   elements.periodStart.addEventListener('change', updatePeriodEntryCount);
   elements.periodEnd.addEventListener('change', updatePeriodEntryCount);
   elements.summarizePeriod.addEventListener('click', summarizePeriod);
@@ -2055,5 +2020,5 @@ render();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260811-auto-sync-layout'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260811-archive-jump'));
 }

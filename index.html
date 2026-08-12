@@ -103,7 +103,7 @@
               <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
             </div>
             <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="日历"></div>
-            <p class="calendar-legend"><span class="legend-mark"></span>点击日期筛选日记档案</p>
+            <p class="calendar-legend"><span class="legend-mark"></span>点击日期，跳转到对应的日记档案</p>
           </aside>
         </div>
 
@@ -130,12 +130,12 @@
                 <span>累计天数</span>
               </div>
             </section>
-            <div class="calendar-filter-bar" aria-label="日记筛选">
-              <button id="clear-calendar-filter" type="button" class="quiet-button">全部记录</button>
-              <label>单日<input id="calendar-filter-date" type="date" /></label>
-              <label>日期范围<input id="calendar-filter-start" type="date" /><span>至</span><input id="calendar-filter-end" type="date" /></label>
+            <div class="archive-jump-bar" aria-label="日记档案跳转">
+              <label for="archive-jump-date">跳转到日期</label>
+              <input id="archive-jump-date" type="date" />
+              <button id="archive-jump-button" type="button" class="quiet-button">跳转</button>
             </div>
-            <p id="calendar-filter-status" class="calendar-filter-status">按时间从新到旧排列</p>
+            <p id="calendar-filter-status" class="calendar-filter-status">全部日记 · 按时间从新到旧排列</p>
             <div id="calendar-archive-list" class="calendar-archive-list" aria-live="polite"></div>
           </section>
         </section>
@@ -359,6 +359,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260811-auto-sync-layout" defer></script>
+    <script src="./app.js?release=20260811-archive-jump" defer></script>
   </body>
 </html>
