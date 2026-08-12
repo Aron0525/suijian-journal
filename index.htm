@@ -22,14 +22,22 @@
         </a>
         <div class="top-actions" aria-label="工具栏">
           <div class="top-tools">
-            <button id="search-panel-button" class="workspace-action" type="button">搜索</button>
-            <button id="summary-panel-button" class="workspace-action" type="button">汇总</button>
-            <button id="export-button" class="workspace-action" type="button">导出</button>
-            <label class="workspace-action import-label" for="import-input">导入</label>
+            <button id="search-panel-button" class="top-search-action" type="button" aria-label="搜索日记">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="5.8"></circle><path d="m15.2 15.2 4.1 4.1"></path></svg>
+            </button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="summary-panel-button" class="top-text-action" type="button">汇总</button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="export-button" class="top-text-action" type="button">导出</button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <label class="top-text-action import-label" for="import-input">导入</label>
             <input id="import-input" type="file" accept="application/json,.json" hidden />
-            <button id="cloud-sync-button" class="workspace-action" type="button">同步</button>
-            <button id="model-config-button" class="workspace-action" type="button">模型配置</button>
-            <button id="cloud-account-button" class="workspace-action account-action" type="button">账号</button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="cloud-sync-button" class="top-text-action" type="button">同步</button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="model-config-button" class="top-text-action" type="button">模型配置</button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="cloud-account-button" class="top-text-action account-action" type="button">账号</button>
           </div>
           <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
         </div>
