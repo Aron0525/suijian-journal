@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index, indexHtm, schema, styles, capacitorConfig, mobileBuildScript, packageJson] = await Promise.all([
+const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index, indexHtm, schema, styles, capacitorConfig, mobileBuildScript, packageJson, nativeBuildScript, mobileVersion] = await Promise.all([
   readFile(new URL('../app.js', import.meta.url), 'utf8'),
   readFile(new URL('../sw.js', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/functions/ai-proxy/index.ts', import.meta.url), 'utf8'),
@@ -14,6 +14,8 @@ const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index, i
   readFile(new URL('../capacitor.config.ts', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/build-mobile-web.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../package.json', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/build-native-update-manifest.mjs', import.meta.url), 'utf8'),
+  readFile(new URL('../mobile-version.json', import.meta.url), 'utf8'),
 ]);
 
 assert.equal(indexHtm, index, 'index.htm is the installed PWA entry point and must match index.html');
@@ -27,6 +29,13 @@ assert.match(app, /updater\.download\(\{ url: manifest\.url, version: manifest\.
 assert.match(app, /updater\.next\(\{ id: bundle\.id \}\)/);
 assert.match(app, /updater\.notifyAppReady\(\)/);
 assert.match(app, /void initializeNativeUpdates\(\)/);
+assert.match(app, /const NATIVE_APP_UPDATE_MANIFEST_URL = 'https:\/\/aron0525\.github\.io\/suijian-journal\/native-app-update\.json'/);
+assert.match(app, /function checkNativeInstallerUpdate\(\{ quiet = true \} = \{\}\)/);
+assert.match(app, /function openNativeInstallerDownload\(\)/);
+assert.match(app, /function checkMobileUpdatesManually\(\)/);
+assert.match(app, /function isTrustedNativeInstallerUpdate\(manifest\)/);
+assert.match(app, /native-app-update\.json/);
+
 assert.match(app, /localStorage\.setItem\(CLOUD_SESSION_KEY/);
 assert.match(app, /sessionStorage\.removeItem\(CLOUD_SESSION_KEY/);
 assert.match(app, /rememberUntil/);
@@ -61,6 +70,10 @@ assert.match(serviceWorker, /cache: 'no-store'/);
 assert.match(serviceWorker, /suijian-pwa-v24/);
 assert.match(index, /app\.js\?release=20260812-mobile-ota/);
 assert.match(index, /id="account-dialog"/);
+assert.match(index, /id="mobile-update-panel"/);
+assert.match(index, /id="check-mobile-update"/);
+assert.match(index, /id="download-mobile-update"/);
+
 assert.match(index, /id="sync-dialog"/);
 assert.match(index, /id="sync-open-account"/);
 assert.doesNotMatch(index, /id="supabase-url"/);
@@ -73,6 +86,7 @@ assert.match(edgeFunction, /export default \{/);
 assert.match(edgeFunction, /if \(request\.method === 'OPTIONS'\)/);
 assert.match(schema, /grant select, insert, update, delete on table public\.journal_entries, public\.daily_summaries, public\.period_summaries to authenticated;/);
 assert.match(styles, /\.sync-gate\[hidden\]\s*\{\s*display:\s*none;/);
+assert.match(styles, /\.mobile-update-card/);
 assert.match(styles, /\.sync-auth-form\[hidden\]\s*\{\s*display:\s*none;/);
 assert.match(index, /class="today-calendar card"/);
 assert.match(index, /id="calendar-archive-list"/);
@@ -84,16 +98,17 @@ const archiveMarkup = index.match(/<section class="archive-section"[\s\S]+?<\/se
 assert.ok(archiveMarkup, 'calendar archive markup should exist');
 assert.doesNotMatch(archiveMarkup, /日期范围/);
 const topTools = index.match(/<div class="top-tools">([\s\S]+?)<\/div>/)?.[1] ?? '';
-assert.match(topTools, /search-panel-button[\s\S]*summary-panel-button[\s\S]*export-button[\s\S]*import-input[\s\S]*cloud-sync-button[\s\S]*model-config-button[\s\S]*cloud-account-button/);
+assert.match(topTools, /search-panel-button[\s\S]*summary-panel-button[\s\S]*review-panel-button[\s\S]*export-button[\s\S]*import-input[\s\S]*cloud-sync-button[\s\S]*model-config-button[\s\S]*cloud-account-button/);
 assert.match(topTools, /id="search-panel-button" class="top-search-action"[^>]*aria-label="搜索日记"[\s\S]*?<svg/);
 assert.doesNotMatch(topTools, /id="search-panel-button"[^>]*>搜索</);
 assert.match(topTools, /id="summary-panel-button" class="top-text-action"/);
+assert.match(topTools, /id="review-panel-button" class="top-text-action"/);
 assert.match(topTools, /id="export-button" class="top-text-action"/);
 assert.match(topTools, /class="top-text-action import-label" for="import-input"/);
 assert.match(topTools, /id="cloud-sync-button" class="top-text-action"/);
 assert.match(topTools, /id="model-config-button" class="top-text-action"/);
 assert.match(topTools, /id="cloud-account-button" class="top-text-action account-action"/);
-assert.equal((topTools.match(/class="top-tool-divider"/g) ?? []).length, 6, 'top actions should use six vertical separators');
+assert.equal((topTools.match(/class="top-tool-divider"/g) ?? []).length, 7, 'top actions should use seven vertical separators');
 assert.match(index, /id="cloud-account-button"[^>]*>账号</);
 assert.doesNotMatch(styles, /#export-button\s*\{\s*display:\s*none;/);
 assert.match(styles, /\.top-tool-divider\s*\{[^}]*width:\s*1px/);
@@ -110,6 +125,10 @@ assert.ok(archiveEntriesSource, 'calendar archive entries implementation should 
 assert.doesNotMatch(archiveEntriesSource, /calendarFilter/);
 assert.match(styles, /\.archive-jump-bar/);
 assert.match(styles, /\.calendar-archive-list\s*\{[^}]*max-height:\s*none;/);
+assert.match(githubPagesWorkflow, /actions\/setup-java@v4/);
+assert.match(githubPagesWorkflow, /android-actions\/setup-android@v3/);
+assert.match(githubPagesWorkflow, /SUJIAN_ANDROID_KEYSTORE_BASE64/);
+assert.match(githubPagesWorkflow, /npm run build:android/);
 assert.match(githubPagesWorkflow, /actions\/upload-pages-artifact@v3/);
 assert.match(githubPagesWorkflow, /path: dist-mobile/);
 assert.match(githubPagesWorkflow, /actions\/deploy-pages@v4/);
@@ -118,6 +137,12 @@ assert.match(capacitorConfig, /autoUpdate: 'off'/);
 assert.match(mobileBuildScript, /app-update\.json/);
 assert.match(mobileBuildScript, /suijian-web-\$\{release\}\.zip/);
 assert.match(mobileBuildScript, /createHash\('sha256'\)/);
+assert.match(packageJson, /"@capacitor\/app"/);
+assert.match(packageJson, /"build:android"/);
+assert.match(nativeBuildScript, /native-app-update\.json/);
+assert.match(nativeBuildScript, /suijian-android-v\$\{versionName\}\.apk/);
+assert.match(mobileVersion, /"versionCode": 2/);
+assert.match(mobileVersion, /"versionName": "1\.1\.0"/);
 assert.match(packageJson, /"@capgo\/capacitor-updater"/);
 assert.match(manifest, /"start_url": "\.\/index\.htm"/);
 assert.match(manifest, /"scope": "\.\/"/);
@@ -153,5 +178,26 @@ assert.match(app, /草稿已粘贴到输入框，原草稿已删除/);
 assert.match(app, /function saveNewEntry\(\) \{\s*clearTimeout\(draftTimer\)/);
 assert.match(styles, /\.draft-library-button/);
 assert.match(styles, /\.draft-library-item/);
+
+assert.match(index, /id="review-panel-button"/);
+assert.match(index, /id="review-dialog"/);
+assert.match(index, /id="review-year"/);
+assert.match(index, /id="review-monthly-activity"/);
+assert.match(index, /id="review-emotion-trend"/);
+assert.match(index, /id="review-keywords"/);
+assert.match(index, /id="reminder-form"/);
+assert.match(index, /id="reminder-enabled"/);
+assert.match(index, /id="reminder-time"/);
+assert.match(app, /const REMINDER_SETTINGS_KEY/);
+assert.match(app, /function journalReview\(year\)/);
+assert.match(app, /function commonKeywords\(entries\)/);
+assert.match(app, /function renderReview\(\)/);
+assert.match(app, /function scheduleNativeReminders\(settings,/);
+assert.match(app, /function startBrowserReminder\(\)/);
+assert.match(app, /function saveReminderSettings\(\)/);
+assert.match(app, /LocalNotifications/);
+assert.match(styles, /\.review-dialog/);
+assert.match(styles, /\.reminder-card/);
+assert.match(packageJson, /"@capacitor\/local-notifications"/);
 
 console.log('JavaScript security regression checks passed');

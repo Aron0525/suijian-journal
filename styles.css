@@ -357,3 +357,65 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .draft-library-item { padding-right: 18px; }
   .draft-library-action { position: static; margin-top: 2px; transform: none; }
 }
+
+/* 年度回顾与写作提醒 */
+.review-dialog { width: min(900px, calc(100% - 32px)); }
+.review-year-select { display: grid; flex: 0 0 auto; gap: 6px; color: var(--ink-soft); font-size: 11px; }
+.review-year-select select, .reminder-time-field input { min-height: 38px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: rgba(255,255,255,.62); font: inherit; }
+.yearly-review-card, .reminder-card { margin-top: 18px; padding: 25px; border-radius: 4px 25px 4px 4px; box-shadow: none; }
+.reminder-card { border-top: 3px solid rgba(198,109,76,.55); border-radius: 4px 4px 25px 4px; }
+.review-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.review-card-heading h2 { margin: 4px 0 0; font-size: 21px; }
+.review-readonly { flex: 0 0 auto; padding: 5px 7px; border: 1px solid rgba(154,172,113,.65); border-radius: 999px; color: var(--ink-soft); background: rgba(154,172,113,.1); font-size: 10px; }
+.review-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 20px; border: 1px solid var(--line); background: var(--line); }
+.review-stat-grid > div { display: grid; gap: 5px; min-width: 0; padding: 14px; background: rgba(255,252,246,.7); }
+.review-stat-grid strong { color: var(--ink); font-family: "Noto Serif SC", serif; font-size: 21px; line-height: 1.15; }
+.review-stat-grid span { color: var(--ink-soft); font-family: "DM Mono", monospace; font-size: 10px; }
+.review-annual-copy { margin: 19px 0 0; color: var(--ink-soft); font-size: 13px; line-height: 1.85; }
+.review-subsection { margin-top: 23px; padding-top: 19px; border-top: 1px solid rgba(66,99,93,.17); }
+.review-subsection-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.review-subsection-head h3 { margin: 0; color: var(--ink); font-family: "Noto Serif SC", serif; font-size: 16px; }
+.review-subsection-head span { color: var(--ink-soft); font-size: 10px; }
+.review-monthly-activity, .review-emotion-trend { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; margin-top: 13px; }
+.review-month-item, .review-emotion-item { display: grid; gap: 3px; min-width: 0; padding: 9px 8px; border: 1px solid rgba(66,99,93,.18); border-radius: 3px 11px 3px 3px; background: rgba(255,255,255,.42); }
+.review-month-item span, .review-emotion-item span { color: var(--ink-soft); font-family: "DM Mono", monospace; font-size: 10px; }
+.review-month-item strong, .review-emotion-item strong { overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.review-month-item small, .review-emotion-item small { color: var(--clay-deep); font-family: "DM Mono", monospace; font-size: 9px; }
+.review-keywords { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+.review-keyword { padding: 6px 9px; border: 1px solid rgba(198,109,76,.42); border-radius: 999px; color: var(--clay-deep); background: rgba(198,109,76,.08); font-size: 11px; }
+.review-empty { color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
+.reminder-toggle { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.reminder-toggle input { accent-color: var(--clay); }
+.reminder-copy { margin: 13px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.7; }
+.reminder-controls { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 20px; align-items: end; margin-top: 19px; }
+.reminder-time-field { display: grid; gap: 7px; color: var(--ink-soft); font-size: 11px; }
+.reminder-days { display: flex; flex-wrap: wrap; gap: 7px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.reminder-days legend { width: 100%; margin-bottom: 3px; color: var(--ink-soft); font-size: 11px; }
+.reminder-days label { display: inline-flex; align-items: center; gap: 4px; padding: 5px 6px; border: 1px solid rgba(66,99,93,.2); border-radius: 2px; color: var(--ink-soft); font-size: 11px; }
+.reminder-days input { accent-color: var(--clay); }
+.reminder-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 19px; padding-top: 15px; border-top: 1px solid rgba(66,99,93,.17); }
+.reminder-footer p { margin: 0; color: var(--ink-soft); font-size: 11px; line-height: 1.65; }
+
+@media (max-width: 760px) {
+  .top-tools { flex-wrap: wrap; row-gap: 3px; }
+  .review-year-select { width: 100%; max-width: 150px; }
+  .yearly-review-card, .reminder-card { padding: 20px; }
+  .review-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-monthly-activity, .review-emotion-trend { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .review-card-heading, .reminder-footer { align-items: flex-start; flex-direction: column; }
+  .reminder-controls { grid-template-columns: 1fr; gap: 15px; }
+  .reminder-time-field input { width: min(160px, 100%); }
+  .reminder-footer .primary-button { width: 100%; }
+}
+
+/* 手机 App 更新 */
+.mobile-update-card { margin-top: 16px; border-top: 3px solid rgba(154,172,113,.75); }
+.mobile-update-card[hidden] { display: none; }
+.mobile-update-status { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.7; }
+.mobile-update-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+.mobile-update-actions .quiet-button { padding: 8px 10px; }
+
+@media (max-width: 760px) {
+  .mobile-update-actions { align-items: stretch; flex-direction: column; }
+  .mobile-update-actions .quiet-button, .mobile-update-actions .primary-button { width: 100%; }
+}

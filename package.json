@@ -4,18 +4,21 @@
   "type": "module",
   "version": "1.0.0",
   "scripts": {
-    "check": "node --check app.js && node --check sw.js && node --check scripts/build-mobile-web.mjs && python3 -c \"import ast, pathlib; ast.parse(pathlib.Path('server.py').read_text()); print('syntax checks passed')\"",
-    "test": "node tests/security-regression.mjs && node tests/mobile-ota-package.mjs && node tests/writing-rhythm-regression.mjs && python3 -m unittest tests/test_server.py",
+    "check": "node --check app.js && node --check sw.js && node --check scripts/build-mobile-web.mjs && node --check scripts/build-native-update-manifest.mjs && python3 -c \"import ast, pathlib; ast.parse(pathlib.Path('server.py').read_text()); print('syntax checks passed')\"",
+    "test": "node tests/security-regression.mjs && node tests/mobile-ota-package.mjs && node tests/native-app-update-package.mjs && node tests/writing-rhythm-regression.mjs && python3 -m unittest tests/test_server.py",
     "build:mobile": "node scripts/build-mobile-web.mjs",
+    "build:android": "./build-android-apk.sh",
     "sync:mobile": "npm run build:mobile && npx cap sync",
     "open:ios": "npm run sync:mobile && npx cap open ios",
     "open:android": "npm run sync:mobile && npx cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "@capacitor/ios": "^8.5.0",
+    "@capacitor/local-notifications": "^8.2.1",
     "@capgo/capacitor-updater": "^8.51.3"
   },
   "devDependencies": {

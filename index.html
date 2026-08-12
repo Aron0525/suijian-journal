@@ -28,6 +28,8 @@
             <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="summary-panel-button" class="top-text-action" type="button">汇总</button>
             <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="review-panel-button" class="top-text-action" type="button">回顾</button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="export-button" class="top-text-action" type="button">导出</button>
             <span class="top-tool-divider" aria-hidden="true"></span>
             <label class="top-text-action import-label" for="import-input">导入</label>
@@ -190,6 +192,77 @@
       </div>
     </dialog>
 
+
+    <dialog id="review-dialog" class="workspace-dialog review-dialog" aria-labelledby="journal-review-title">
+      <div class="workspace-dialog-body">
+        <button id="close-review-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭回顾窗口">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">回看与提醒</p>
+            <h1 id="journal-review-title">记录回顾</h1>
+          </div>
+          <label class="review-year-select" for="review-year">回顾年份<select id="review-year" aria-label="选择回顾年份"></select></label>
+        </div>
+
+        <section class="review-card yearly-review-card card" aria-labelledby="yearly-review-heading">
+          <div class="review-card-heading">
+            <div>
+              <span class="prompt-kicker">年度回顾</span>
+              <h2 id="yearly-review-heading">这一年的记录</h2>
+            </div>
+            <span class="review-readonly">只读统计</span>
+          </div>
+          <div class="review-stat-grid" aria-label="年度记录统计">
+            <div><strong id="review-day-count">0 天</strong><span>记录天数</span></div>
+            <div><strong id="review-entry-count">0 条</strong><span>日记片段</span></div>
+            <div><strong id="review-word-count">0 字</strong><span>累计文字</span></div>
+            <div><strong id="review-best-streak">0 天</strong><span>最长连续</span></div>
+          </div>
+          <p id="review-annual-copy" class="review-annual-copy"></p>
+          <div class="review-subsection">
+            <div class="review-subsection-head"><h3>每月记录</h3><span>按条数</span></div>
+            <div id="review-monthly-activity" class="review-monthly-activity" aria-live="polite"></div>
+          </div>
+          <div class="review-subsection">
+            <div class="review-subsection-head"><h3>文字情绪线索</h3><span>按日记文字中的情绪词统计</span></div>
+            <div id="review-emotion-trend" class="review-emotion-trend" aria-live="polite"></div>
+          </div>
+          <div class="review-subsection">
+            <div class="review-subsection-head"><h3>高频关键词</h3><span>自动去除常用词</span></div>
+            <div id="review-keywords" class="review-keywords" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <form id="reminder-form" class="reminder-card card">
+          <div class="review-card-heading">
+            <div>
+              <span class="prompt-kicker">写作提醒</span>
+              <h2>每天留一点时间</h2>
+            </div>
+            <label class="reminder-toggle"><input id="reminder-enabled" type="checkbox" /><span>开启提醒</span></label>
+          </div>
+          <p class="reminder-copy">Android App 会使用本地通知；网页/PWA 在保持打开时显示提醒和系统通知。</p>
+          <div class="reminder-controls">
+            <label class="reminder-time-field">提醒时间<input id="reminder-time" type="time" value="21:30" required /></label>
+            <fieldset class="reminder-days">
+              <legend>提醒日期</legend>
+              <label><input data-reminder-day type="checkbox" value="2" checked />周一</label>
+              <label><input data-reminder-day type="checkbox" value="3" checked />周二</label>
+              <label><input data-reminder-day type="checkbox" value="4" checked />周三</label>
+              <label><input data-reminder-day type="checkbox" value="5" checked />周四</label>
+              <label><input data-reminder-day type="checkbox" value="6" checked />周五</label>
+              <label><input data-reminder-day type="checkbox" value="7" checked />周六</label>
+              <label><input data-reminder-day type="checkbox" value="1" checked />周日</label>
+            </fieldset>
+          </div>
+          <div class="reminder-footer">
+            <p id="reminder-status" role="status" aria-live="polite">未开启每日提醒。</p>
+            <button type="submit" class="primary-button">保存提醒</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
     <template id="period-summary-template">
       <article class="period-summary-card card">
         <div class="period-summary-head">
@@ -284,6 +357,18 @@
             </div>
           </div>
         </section>
+        <section id="mobile-update-panel" class="sync-card mobile-update-card card" hidden aria-labelledby="mobile-update-title">
+          <div class="sync-card-head">
+            <div><span class="prompt-kicker">Android App</span><strong id="mobile-update-title">App 更新</strong></div>
+            <span id="mobile-app-version" class="sync-config-status">正在读取版本</span>
+          </div>
+          <p id="mobile-app-update-status" class="mobile-update-status">网页内容会在启动、回到前台、网络恢复和每 10 分钟自动检查更新。</p>
+          <div class="mobile-update-actions">
+            <button id="check-mobile-update" type="button" class="quiet-button">检查更新</button>
+            <button id="download-mobile-update" type="button" class="primary-button" hidden>下载新版 Android 包</button>
+          </div>
+        </section>
+
         <p class="dialog-note">账号仅用于区分你的云端数据；日记内容由账号数据规则隔离。</p>
       </div>
     </dialog>

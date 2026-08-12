@@ -21,6 +21,10 @@ const config: CapacitorConfig = {
   plugins: {
     // GitHub Pages publishes a signed-by-checksum static bundle. The app owns
     // the manifest check so it never needs a production remote WebView URL.
+    LocalNotifications: {
+      iconColor: '#173f3a',
+      presentationOptions: ['badge', 'sound', 'banner', 'list'],
+    },
     CapacitorUpdater: {
       autoUpdate: 'off',
       appReadyTimeout: 10000,

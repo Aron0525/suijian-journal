@@ -31,6 +31,9 @@ const SESSION_REMEMBER_MS = 2 * 24 * 60 * 60 * 1000;
 const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const MOBILE_OTA_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/app-update.json';
 const MOBILE_OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/native-app-update.json';
+const REMINDER_SETTINGS_KEY = 'suijian-writing-reminder-v1';
+const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7] });
 let runtimeAiApiKey = '';
 const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
@@ -84,8 +87,11 @@ const state = {
   archiveJumpDate: '',
   cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0 },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
+  nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
   pastedDraft: null,
+  reviewYear: new Date().getFullYear(),
+  reminder: { settings: loadReminderSettings(), status: '', timer: 0 },
 };
 
 const elements = {
@@ -140,12 +146,34 @@ const elements = {
   searchInput: document.querySelector('#search-input'),
   searchResults: document.querySelector('#search-results'),
   summaryPanelButton: document.querySelector('#summary-panel-button'),
+  reviewPanelButton: document.querySelector('#review-panel-button'),
+  reviewDialog: document.querySelector('#review-dialog'),
+  closeReviewDialog: document.querySelector('#close-review-dialog'),
+  reviewYear: document.querySelector('#review-year'),
+  reviewDayCount: document.querySelector('#review-day-count'),
+  reviewEntryCount: document.querySelector('#review-entry-count'),
+  reviewWordCount: document.querySelector('#review-word-count'),
+  reviewBestStreak: document.querySelector('#review-best-streak'),
+  reviewMonthlyActivity: document.querySelector('#review-monthly-activity'),
+  reviewEmotionTrend: document.querySelector('#review-emotion-trend'),
+  reviewKeywords: document.querySelector('#review-keywords'),
+  reviewAnnualCopy: document.querySelector('#review-annual-copy'),
+  reminderForm: document.querySelector('#reminder-form'),
+  reminderEnabled: document.querySelector('#reminder-enabled'),
+  reminderTime: document.querySelector('#reminder-time'),
+  reminderDayInputs: document.querySelectorAll('[data-reminder-day]'),
+  reminderStatus: document.querySelector('#reminder-status'),
   searchPanelButton: document.querySelector('#search-panel-button'),
   cloudSyncButton: document.querySelector('#cloud-sync-button'),
   cloudAccountButton: document.querySelector('#cloud-account-button'),
   accountDialog: document.querySelector('#account-dialog'),
   closeAccountDialog: document.querySelector('#close-account-dialog'),
   accountDialogCopy: document.querySelector('#account-dialog-copy'),
+  mobileUpdatePanel: document.querySelector('#mobile-update-panel'),
+  mobileAppVersion: document.querySelector('#mobile-app-version'),
+  mobileAppUpdateStatus: document.querySelector('#mobile-app-update-status'),
+  checkMobileUpdate: document.querySelector('#check-mobile-update'),
+  downloadMobileUpdate: document.querySelector('#download-mobile-update'),
   syncDialog: document.querySelector('#sync-dialog'),
   closeSyncDialog: document.querySelector('#close-sync-dialog'),
   syncDialogCopy: document.querySelector('#sync-dialog-copy'),
@@ -436,6 +464,392 @@ function updateDraftLibraryButton() {
   elements.draftLibraryCount.hidden = count === 0;
   elements.draftLibraryButton.setAttribute('aria-label', count ? `打开草稿箱，共 ${count} 条草稿` : '打开草稿箱');
 }
+
+const REVIEW_MONTH_LABELS = Object.freeze(['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']);
+const REVIEW_EMOTION_TERMS = Object.freeze({
+  舒展: ['开心', '高兴', '快乐', '满足', '轻松', '顺利', '期待', '喜欢', '幸福', '兴奋', '感激'],
+  平静: ['平静', '普通', '稳定', '安静', '还好', '日常', '休息', '慢慢'],
+  低落: ['难过', '焦虑', '烦', '累', '失望', '生气', '压力', '痛苦', '孤独', '崩溃', '内耗'],
+});
+const REVIEW_STOP_WORDS = new Set([
+  '今天', '昨天', '明天', '我们', '他们', '自己', '这个', '那个', '已经', '还是', '就是', '因为', '所以', '然后', '但是',
+  '可能', '感觉', '觉得', '真的', '有点', '一下', '一个', '一些', '没有', '什么', '时候', '事情', '现在', '这样', '那样',
+  '记录', '日记', '内容', '时间', '一天', '可以', '需要', '晚上', '下午', '上午', '回来', '开始', '继续', '今天的',
+]);
+const REMINDER_WEEKDAY_LABELS = Object.freeze({ 1: '周日', 2: '周一', 3: '周二', 4: '周三', 5: '周四', 6: '周五', 7: '周六' });
+const REMINDER_NOTIFICATION_IDS = Object.freeze([4101, 4102, 4103, 4104, 4105, 4106, 4107]);
+const REMINDER_CHANNEL_ID = 'journal-writing-reminders';
+function reviewEntriesForYear(year) {
+  return state.data.entries
+    .filter((entry) => !entry.deletedAt && isDateKey(entry.date) && Number(entry.date.slice(0, 4)) === year)
+    .sort((first, second) => first.date.localeCompare(second.date) || new Date(first.createdAt) - new Date(second.createdAt));
+}
+
+function reviewCharacterCount(entry) {
+  return `${entry.title || ''}${entry.content || ''}`.replace(/\s/g, '').length;
+}
+
+function countReviewTerm(text, term) {
+  return text.split(term).length - 1;
+}
+
+function reviewEmotionCounts(text) {
+  const result = Object.fromEntries(Object.keys(REVIEW_EMOTION_TERMS).map((label) => [label, 0]));
+  Object.entries(REVIEW_EMOTION_TERMS).forEach(([label, terms]) => {
+    result[label] = terms.reduce((total, term) => total + countReviewTerm(text, term), 0);
+  });
+  return result;
+}
+
+function dominantReviewEmotion(counts) {
+  const ranked = Object.entries(counts).sort((first, second) => second[1] - first[1]);
+  return ranked[0]?.[1] ? ranked[0][0] : '未标记';
+}
+
+function longestReviewStreak(entries) {
+  const dates = [...new Set(entries.map((entry) => entry.date))].sort();
+  let best = 0;
+  let current = 0;
+  let previous = null;
+  dates.forEach((date) => {
+    if (previous && (parseDateKey(date) - parseDateKey(previous)) === 24 * 60 * 60 * 1000) current += 1;
+    else current = 1;
+    best = Math.max(best, current);
+    previous = date;
+  });
+  return best;
+}
+
+function reviewTokens(text) {
+  const source = text.toLowerCase();
+  if (typeof Intl.Segmenter === 'function') {
+    const segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
+    return [...segmenter.segment(source)]
+      .filter((part) => part.isWordLike)
+      .map((part) => part.segment.trim())
+      .filter((word) => word.length >= 2 && !REVIEW_STOP_WORDS.has(word));
+  }
+  return source.match(/[\u4e00-\u9fff]{2,}|[a-z][a-z0-9-]{1,}/g) ?? [];
+}
+
+function commonKeywords(entries) {
+  const counts = new Map();
+  entries.forEach((entry) => {
+    reviewTokens(`${entry.title || ''} ${entry.content || ''}`).forEach((word) => {
+      counts.set(word, (counts.get(word) || 0) + 1);
+    });
+  });
+  return [...counts.entries()]
+    .sort((first, second) => second[1] - first[1] || first[0].localeCompare(second[0], 'zh-CN'))
+    .slice(0, 8)
+    .map(([word, count]) => ({ word, count }));
+}
+
+function journalReview(year) {
+  const entries = reviewEntriesForYear(year);
+  const monthly = REVIEW_MONTH_LABELS.map((label, month) => ({
+    label,
+    month,
+    days: new Set(),
+    entries: 0,
+    words: 0,
+    emotions: { 舒展: 0, 平静: 0, 低落: 0 },
+  }));
+  const emotions = { 舒展: 0, 平静: 0, 低落: 0 };
+
+  entries.forEach((entry) => {
+    const month = Number(entry.date.slice(5, 7)) - 1;
+    const target = monthly[month];
+    const source = `${entry.title || ''}\n${entry.content || ''}`;
+    const entryEmotions = reviewEmotionCounts(source);
+    target.days.add(entry.date);
+    target.entries += 1;
+    target.words += reviewCharacterCount(entry);
+    Object.keys(emotions).forEach((label) => {
+      target.emotions[label] += entryEmotions[label];
+      emotions[label] += entryEmotions[label];
+    });
+  });
+
+  const days = new Set(entries.map((entry) => entry.date));
+  const activeMonths = monthly.filter((month) => month.entries > 0);
+  const mostActive = [...monthly].sort((first, second) => second.entries - first.entries)[0];
+  const keywords = commonKeywords(entries);
+  const dominantEmotion = dominantReviewEmotion(emotions);
+  const summary = !entries.length
+    ? `${year} 年还没有可回顾的日记。先写下第一条，回顾会随记录自动生成。`
+    : `${year} 年共写下 ${entries.length} 条记录，覆盖 ${days.size} 天${mostActive?.entries ? `；${mostActive.label}记录最多，共 ${mostActive.entries} 条` : ''}。${dominantEmotion === '未标记' ? '文字里暂未识别到明显的情绪词。' : `文字中更常出现“${dominantEmotion}”相关线索。`}${keywords.length ? `反复出现的主题包括：${keywords.slice(0, 4).map((item) => item.word).join('、')}。` : ''}`;
+
+  return {
+    year,
+    entries,
+    totalDays: days.size,
+    totalEntries: entries.length,
+    totalWords: entries.reduce((total, entry) => total + reviewCharacterCount(entry), 0),
+    bestStreak: longestReviewStreak(entries),
+    monthly,
+    emotions,
+    activeMonths: activeMonths.length,
+    keywords,
+    summary,
+  };
+}
+
+function renderReviewStat(target, value) {
+  target.textContent = value;
+}
+
+function renderReview() {
+  if (!elements.reviewYear) return;
+  const currentYear = new Date().getFullYear();
+  const years = [...new Set([currentYear, ...state.data.entries
+    .filter((entry) => !entry.deletedAt && isDateKey(entry.date))
+    .map((entry) => Number(entry.date.slice(0, 4)))])]
+    .filter(Number.isInteger)
+    .sort((first, second) => second - first);
+  if (!years.includes(state.reviewYear)) state.reviewYear = years[0] || currentYear;
+
+  elements.reviewYear.replaceChildren();
+  years.forEach((year) => {
+    const option = document.createElement('option');
+    option.value = String(year);
+    option.textContent = `${year} 年`;
+    option.selected = year === state.reviewYear;
+    elements.reviewYear.append(option);
+  });
+
+  const review = journalReview(state.reviewYear);
+  renderReviewStat(elements.reviewDayCount, `${review.totalDays} 天`);
+  renderReviewStat(elements.reviewEntryCount, `${review.totalEntries} 条`);
+  renderReviewStat(elements.reviewWordCount, `${review.totalWords} 字`);
+  renderReviewStat(elements.reviewBestStreak, `${review.bestStreak} 天`);
+  elements.reviewAnnualCopy.textContent = review.summary;
+
+  elements.reviewMonthlyActivity.replaceChildren();
+  review.monthly.forEach((month) => {
+    const item = document.createElement('article');
+    item.className = 'review-month-item';
+    const label = document.createElement('span');
+    label.textContent = month.label;
+    const count = document.createElement('strong');
+    count.textContent = `${month.entries} 条`;
+    const detail = document.createElement('small');
+    detail.textContent = month.entries ? `${month.days.size} 天 · ${month.words} 字` : '未记录';
+    item.append(label, count, detail);
+    elements.reviewMonthlyActivity.append(item);
+  });
+
+  elements.reviewEmotionTrend.replaceChildren();
+  review.monthly.forEach((month) => {
+    const item = document.createElement('div');
+    item.className = 'review-emotion-item';
+    const label = document.createElement('span');
+    label.textContent = month.label;
+    const value = document.createElement('strong');
+    value.textContent = month.entries ? dominantReviewEmotion(month.emotions) : '—';
+    const detail = document.createElement('small');
+    detail.textContent = month.entries ? `${month.entries} 条` : '未记录';
+    item.append(label, value, detail);
+    elements.reviewEmotionTrend.append(item);
+  });
+
+  elements.reviewKeywords.replaceChildren();
+  if (!review.keywords.length) {
+    const empty = document.createElement('span');
+    empty.className = 'review-empty';
+    empty.textContent = '记录多一些后，这里会出现反复关注的主题。';
+    elements.reviewKeywords.append(empty);
+  } else {
+    review.keywords.forEach(({ word, count }) => {
+      const keyword = document.createElement('span');
+      keyword.className = 'review-keyword';
+      keyword.textContent = `${word} · ${count}`;
+      elements.reviewKeywords.append(keyword);
+    });
+  }
+}
+
+function normalizeReminderSettings(value) {
+  const candidate = value && typeof value === 'object' ? value : {};
+  const time = typeof candidate.time === 'string' && /^\d{2}:\d{2}$/.test(candidate.time) ? candidate.time : DEFAULT_REMINDER_SETTINGS.time;
+  const [hour, minute] = time.split(':').map(Number);
+  const validTime = Number.isInteger(hour) && hour >= 0 && hour <= 23 && Number.isInteger(minute) && minute >= 0 && minute <= 59;
+  const days = [...new Set((Array.isArray(candidate.days) ? candidate.days : DEFAULT_REMINDER_SETTINGS.days)
+    .map(Number)
+    .filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))].sort((first, second) => first - second);
+  return {
+    enabled: Boolean(candidate.enabled),
+    time: validTime ? time : DEFAULT_REMINDER_SETTINGS.time,
+    days: days.length ? days : [...DEFAULT_REMINDER_SETTINGS.days],
+  };
+}
+
+function loadReminderSettings() {
+  try {
+    return normalizeReminderSettings(JSON.parse(localStorage.getItem(REMINDER_SETTINGS_KEY)));
+  } catch {
+    return normalizeReminderSettings(DEFAULT_REMINDER_SETTINGS);
+  }
+}
+
+function persistReminderSettings(settings) {
+  const normalized = normalizeReminderSettings(settings);
+  state.reminder.settings = normalized;
+  localStorage.setItem(REMINDER_SETTINGS_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function reminderDaysLabel(days) {
+  if (days.length === 7) return '每天';
+  return days.map((day) => REMINDER_WEEKDAY_LABELS[day]).join('、');
+}
+
+function reminderSettingsLabel(settings) {
+  if (!settings.enabled) return '未开启每日提醒';
+  return `${reminderDaysLabel(settings.days)} ${settings.time}`;
+}
+
+function renderReminderSettings() {
+  if (!elements.reminderEnabled) return;
+  const settings = state.reminder.settings;
+  elements.reminderEnabled.checked = settings.enabled;
+  elements.reminderTime.value = settings.time;
+  elements.reminderDayInputs.forEach((input) => {
+    input.checked = settings.days.includes(Number(input.value));
+  });
+  elements.reminderStatus.textContent = state.reminder.status || `${reminderSettingsLabel(settings)}。`;
+}
+
+function nativeLocalNotifications() {
+  const capacitor = window.Capacitor;
+  if (!capacitor?.isNativePlatform?.()) return null;
+  return capacitor.Plugins?.LocalNotifications ?? capacitor.registerPlugin?.('LocalNotifications') ?? null;
+}
+
+async function scheduleNativeReminders(settings, { requestPermission = false } = {}) {
+  const notifications = nativeLocalNotifications();
+  if (!notifications) return null;
+  const scheduled = REMINDER_NOTIFICATION_IDS.map((id) => ({ id }));
+  if (!settings.enabled) {
+    await notifications.cancel({ notifications: scheduled });
+    return { message: '已关闭 App 本地提醒。' };
+  }
+  let permission = await notifications.checkPermissions();
+  if (permission.display !== 'granted' && requestPermission) permission = await notifications.requestPermissions();
+  if (permission.display !== 'granted') return { message: '请允许 App 的通知权限后，提醒才会按时送达。' };
+
+  const [hour, minute] = settings.time.split(':').map(Number);
+  if (typeof notifications.createChannel === 'function') {
+    await notifications.createChannel({
+      id: REMINDER_CHANNEL_ID,
+      name: '写日记提醒',
+      description: '岁笺的每日写日记提醒',
+      importance: 3,
+      visibility: 1,
+    });
+  }
+  await notifications.cancel({ notifications: scheduled });
+  await notifications.schedule({
+    notifications: settings.days.map((weekday, index) => ({
+      id: REMINDER_NOTIFICATION_IDS[index],
+      title: '岁笺',
+      body: '留一点时间，写下今天。',
+      channelId: REMINDER_CHANNEL_ID,
+      schedule: { on: { weekday, hour, minute }, allowWhileIdle: true },
+    })),
+  });
+  return { message: `App 提醒已设为${reminderSettingsLabel(settings)}。` };
+}
+
+function stopBrowserReminder() {
+  clearTimeout(state.reminder.timer);
+  state.reminder.timer = 0;
+}
+
+function nextBrowserReminderAt(settings, now = new Date()) {
+  const [hour, minute] = settings.time.split(':').map(Number);
+  for (let offset = 0; offset <= 7; offset += 1) {
+    const candidate = new Date(now);
+    candidate.setDate(candidate.getDate() + offset);
+    candidate.setHours(hour, minute, 0, 0);
+    if (candidate <= now || !settings.days.includes(candidate.getDay() + 1)) continue;
+    return candidate;
+  }
+  return null;
+}
+
+function notifyBrowserReminder() {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('岁笺', { body: '留一点时间，写下今天。', icon: './icons/icon-192.png' });
+  } else {
+    showToast('到写日记的时间了。');
+  }
+}
+
+function startBrowserReminder() {
+  stopBrowserReminder();
+  if (nativeLocalNotifications()) return;
+  const settings = state.reminder.settings;
+  if (!settings.enabled) return;
+  const next = nextBrowserReminderAt(settings);
+  if (!next) return;
+  state.reminder.timer = window.setTimeout(() => {
+    notifyBrowserReminder();
+    startBrowserReminder();
+  }, Math.max(1000, next.getTime() - Date.now()));
+}
+
+async function scheduleBrowserReminder(settings, { requestPermission = false } = {}) {
+  if (!settings.enabled) {
+    stopBrowserReminder();
+    return { message: '已关闭网页内提醒。' };
+  }
+  if ('Notification' in window && Notification.permission !== 'granted' && requestPermission) await Notification.requestPermission();
+  startBrowserReminder();
+  if (!('Notification' in window)) return { message: '网页会在保持打开时显示站内提醒。' };
+  if (Notification.permission === 'denied') return { message: '浏览器通知已关闭；网页保持打开时会显示站内提醒。' };
+  if (Notification.permission !== 'granted') return { message: '网页保持打开时会提醒；允许通知后可显示系统通知。' };
+  return { message: `网页提醒已设为${reminderSettingsLabel(settings)}；网页保持打开时生效。` };
+}
+
+async function applyReminderSchedule(settings, options = {}) {
+  const nativeResult = await scheduleNativeReminders(settings, options);
+  return nativeResult ?? scheduleBrowserReminder(settings, options);
+}
+
+async function saveReminderSettings() {
+  const days = [...elements.reminderDayInputs].filter((input) => input.checked).map((input) => Number(input.value));
+  if (!days.length) {
+    state.reminder.status = '至少选择一天。';
+    renderReminderSettings();
+    return;
+  }
+  const settings = persistReminderSettings({
+    enabled: elements.reminderEnabled.checked,
+    time: elements.reminderTime.value,
+    days,
+  });
+  try {
+    const result = await applyReminderSchedule(settings, { requestPermission: settings.enabled });
+    state.reminder.status = result.message;
+    renderReminderSettings();
+    showToast('每日提醒已保存');
+  } catch {
+    state.reminder.status = '提醒保存了，但系统排程暂时没有完成；下次打开会重试。';
+    renderReminderSettings();
+  }
+}
+
+async function initializeWritingReminders() {
+  try {
+    const result = await applyReminderSchedule(state.reminder.settings);
+    state.reminder.status = result.message;
+  } catch {
+    state.reminder.status = '提醒设置已保存，等待下次尝试排程。';
+  }
+  renderReminderSettings();
+}
+
 
 function saveDraftObject(draft, message = '草稿已保存') {
   state.pastedDraft = null;
@@ -763,6 +1177,8 @@ function render() {
   renderToday();
   renderCalendar();
   renderWritingRhythm();
+  renderReview();
+  renderReminderSettings();
   renderCalendarArchive();
   renderPeriodPanel();
   renderPeriodSummaries();
@@ -1202,6 +1618,16 @@ function openWorkspaceDialog(dialog, focusTarget) {
 function closeWorkspaceDialog(dialog) {
   if (typeof dialog.close === 'function') dialog.close();
   else dialog.removeAttribute('open');
+}
+
+function openReviewDialog() {
+  renderReview();
+  renderReminderSettings();
+  openWorkspaceDialog(elements.reviewDialog, elements.reviewYear);
+}
+
+function closeReviewDialog() {
+  closeWorkspaceDialog(elements.reviewDialog);
 }
 
 function openPeriodSummaryDialog() {
@@ -1749,6 +2175,7 @@ function renderCloudSyncDialog() {
 }
 
 function renderCloudDialogs() {
+  renderMobileAppUpdatePanel();
   renderCloudAccountDialog();
   renderCloudSyncDialog();
 }
@@ -1761,6 +2188,7 @@ function openCloudSyncDialog() {
 
 function openCloudAccountDialog() {
   renderCloudDialogs();
+  void checkNativeInstallerUpdate({ quiet: true });
   const target = state.cloud.session ? elements.syncSignOut : elements.syncEmail;
   openWorkspaceDialog(elements.accountDialog, target);
 }
@@ -2294,6 +2722,130 @@ async function initializeCloudSync() {
   if (!restoredFromCallback && state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
 }
 
+function isNativeMobileApp() {
+  return Boolean(window.Capacitor?.isNativePlatform?.());
+}
+
+function nativeAppPlugin() {
+  const capacitor = window.Capacitor;
+  if (!isNativeMobileApp()) return null;
+  return capacitor.Plugins?.App ?? capacitor.registerPlugin?.('App') ?? null;
+}
+
+async function installedNativeAppInfo() {
+  const app = nativeAppPlugin();
+  if (!app) return null;
+  try {
+    const info = await app.getInfo();
+    const versionCode = Number(info?.build);
+    return {
+      versionName: typeof info?.version === 'string' ? info.version : '',
+      versionCode: Number.isSafeInteger(versionCode) && versionCode > 0 ? versionCode : 0,
+    };
+  } catch {
+    // Older native shells may not contain the App plugin. They can still open the installer link.
+    return null;
+  }
+}
+
+function isTrustedNativeInstallerUpdate(manifest) {
+  if (!manifest || !Number.isSafeInteger(manifest.versionCode) || manifest.versionCode < 1
+    || typeof manifest.versionName !== 'string' || !/^\d+\.\d+\.\d+$/.test(manifest.versionName)
+    || typeof manifest.apkUrl !== 'string' || !/^[a-f0-9]{64}$/.test(manifest.checksum || '')) return false;
+  try {
+    const url = new URL(manifest.apkUrl);
+    const base = new URL(NATIVE_APP_UPDATE_MANIFEST_URL);
+    return url.origin === base.origin
+      && url.pathname === `/suijian-journal/downloads/suijian-android-v${manifest.versionName}.apk`;
+  } catch {
+    return false;
+  }
+}
+
+function hasNativeInstallerUpdate() {
+  const manifest = state.nativeInstaller.manifest;
+  if (!manifest) return false;
+  const installedCode = state.nativeInstaller.installed?.versionCode || 0;
+  return manifest.versionCode > installedCode;
+}
+
+function renderMobileAppUpdatePanel() {
+  if (!elements.mobileUpdatePanel) return;
+  const native = isNativeMobileApp();
+  elements.mobileUpdatePanel.hidden = !native;
+  if (!native) return;
+
+  const { installed, manifest, status, checking } = state.nativeInstaller;
+  elements.mobileAppVersion.textContent = installed?.versionName
+    ? `当前 v${installed.versionName}`
+    : '当前版本待确认';
+  elements.downloadMobileUpdate.hidden = !hasNativeInstallerUpdate();
+  elements.mobileAppUpdateStatus.textContent = checking
+    ? '正在检查网页内容和 Android 安装包更新…'
+    : (status || (manifest
+      ? `网页内容会自动更新；Android 原生版本 v${manifest.versionName} 已是最新。`
+      : '网页内容会在启动、回到前台、网络恢复和每 10 分钟自动检查更新。'));
+}
+
+async function checkNativeInstallerUpdate({ quiet = true } = {}) {
+  if (!isNativeMobileApp() || state.nativeInstaller.checking) return null;
+  state.nativeInstaller.checking = true;
+  renderMobileAppUpdatePanel();
+  try {
+    const [installed, response] = await Promise.all([
+      installedNativeAppInfo(),
+      fetch(NATIVE_APP_UPDATE_MANIFEST_URL, { cache: 'no-store' }),
+    ]);
+    if (!response.ok) throw new Error(`安装包更新清单请求失败：${response.status}`);
+    const manifest = await response.json();
+    if (!isTrustedNativeInstallerUpdate(manifest)) throw new Error('安装包更新清单格式无效');
+    state.nativeInstaller.installed = installed;
+    state.nativeInstaller.manifest = manifest;
+    state.nativeInstaller.status = hasNativeInstallerUpdate()
+      ? `发现 Android v${manifest.versionName}。下载后由 Android 系统确认安装；日记先同步即可保留。`
+      : `Android 原生版本已是最新（v${manifest.versionName}）。网页内容仍会自动更新。`;
+    if (!quiet) showToast(hasNativeInstallerUpdate() ? `发现 Android v${manifest.versionName} 安装包` : 'Android App 已是最新版本');
+    return manifest;
+  } catch (error) {
+    state.nativeInstaller.status = '安装包更新暂时无法检查；网页自动更新不受影响。';
+    if (!quiet) showToast('安装包更新检查失败，请稍后重试');
+    console.info('Native installer update check skipped', error instanceof Error ? error.message : error);
+    return null;
+  } finally {
+    state.nativeInstaller.checking = false;
+    renderMobileAppUpdatePanel();
+  }
+}
+
+function openNativeInstallerDownload() {
+  const manifest = state.nativeInstaller.manifest;
+  if (!hasNativeInstallerUpdate() || !manifest) {
+    showToast('请先检查 Android App 更新');
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = manifest.apkUrl;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  showToast('已打开安装包下载；下载完成后请按 Android 系统提示安装');
+}
+
+async function checkMobileUpdatesManually() {
+  if (!isNativeMobileApp()) return;
+  setBusy(elements.checkMobileUpdate, true, '检查中…');
+  try {
+    await Promise.all([
+      checkNativeAppUpdate({ quiet: false }),
+      checkNativeInstallerUpdate({ quiet: false }),
+    ]);
+  } finally {
+    setBusy(elements.checkMobileUpdate, false);
+  }
+}
+
 function nativeUpdater() {
   const capacitor = window.Capacitor;
   if (!capacitor?.isNativePlatform?.()) return null;
@@ -2321,7 +2873,7 @@ function notifyNativeBundleReady(updater) {
 
 async function checkNativeAppUpdate({ quiet = true } = {}) {
   const updater = nativeUpdater();
-  if (!updater || state.nativeUpdate.checking) return;
+  if (!updater || state.nativeUpdate.checking) return null;
   state.nativeUpdate.checking = true;
   try {
     await notifyNativeBundleReady(updater);
@@ -2331,11 +2883,15 @@ async function checkNativeAppUpdate({ quiet = true } = {}) {
     if (!isTrustedMobileUpdate(manifest)) throw new Error('更新清单格式无效');
 
     const [current, pending] = await Promise.all([updater.current(), updater.getNextBundle()]);
-    if ([current?.bundle?.version, pending?.version].includes(manifest.version)) return;
+    if ([current?.bundle?.version, pending?.version].includes(manifest.version)) {
+      if (!quiet) showToast('网页内容已经是最新版');
+      return { available: false };
+    }
 
     const bundle = await updater.download({ url: manifest.url, version: manifest.version, checksum: manifest.checksum });
     await updater.next({ id: bundle.id });
-    if (!quiet) showToast('新版已下载，退出或重开 App 后会自动启用');
+    if (!quiet) showToast('网页更新已下载，退出或重开 App 后会自动启用');
+    return { available: true };
   } catch (error) {
     // 保留当前已验证的本地版本；下次启动、回到前台或定时检查时会重试。
     console.info('Mobile update check skipped', error instanceof Error ? error.message : error);
@@ -2350,8 +2906,11 @@ function initializeNativeUpdates() {
   // This runs before cloud/API work so a newly switched bundle can prove it booted.
   void notifyNativeBundleReady(updater);
   void checkNativeAppUpdate({ quiet: true });
+  void checkNativeInstallerUpdate({ quiet: true });
   clearInterval(state.nativeUpdate.timer);
+  clearInterval(state.nativeInstaller.timer);
   state.nativeUpdate.timer = window.setInterval(() => void checkNativeAppUpdate({ quiet: true }), MOBILE_OTA_CHECK_INTERVAL_MS);
+  state.nativeInstaller.timer = window.setInterval(() => void checkNativeInstallerUpdate({ quiet: true }), MOBILE_OTA_CHECK_INTERVAL_MS);
 }
 
 function bindEvents() {
@@ -2360,10 +2919,23 @@ function bindEvents() {
     render();
   }));
   elements.summaryPanelButton.addEventListener('click', openPeriodSummaryDialog);
+  elements.reviewPanelButton.addEventListener('click', openReviewDialog);
+  elements.closeReviewDialog.addEventListener('click', closeReviewDialog);
+  closeDialogOnBackdrop(elements.reviewDialog, closeReviewDialog);
+  elements.reviewYear.addEventListener('change', () => {
+    state.reviewYear = Number(elements.reviewYear.value) || new Date().getFullYear();
+    renderReview();
+  });
+  elements.reminderForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void saveReminderSettings();
+  });
   elements.searchPanelButton.addEventListener('click', openSearchDialog);
   elements.cloudSyncButton.addEventListener('click', handleCloudSyncButton);
   elements.cloudAccountButton.addEventListener('click', openCloudAccountDialog);
   elements.closeAccountDialog.addEventListener('click', closeCloudAccountDialog);
+  elements.checkMobileUpdate.addEventListener('click', () => void checkMobileUpdatesManually());
+  elements.downloadMobileUpdate.addEventListener('click', openNativeInstallerDownload);
   elements.closeSyncDialog.addEventListener('click', closeCloudSyncDialog);
   closeDialogOnBackdrop(elements.accountDialog, closeCloudAccountDialog);
   closeDialogOnBackdrop(elements.syncDialog, closeCloudSyncDialog);
@@ -2380,16 +2952,19 @@ function bindEvents() {
   window.addEventListener('online', () => {
     syncCloud({ quiet: true });
     void checkNativeAppUpdate({ quiet: true });
+    void checkNativeInstallerUpdate({ quiet: true });
   });
   window.addEventListener('focus', () => {
     syncCloud({ quiet: true });
     void checkNativeAppUpdate({ quiet: true });
+    void checkNativeInstallerUpdate({ quiet: true });
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') syncBeforeLeaving();
     if (document.visibilityState === 'visible') {
       syncCloud({ quiet: true });
       void checkNativeAppUpdate({ quiet: true });
+    void checkNativeInstallerUpdate({ quiet: true });
     }
   });
   window.addEventListener('pagehide', syncBeforeLeaving);
@@ -2503,6 +3078,7 @@ function bindEvents() {
 bindEvents();
 render();
 void initializeNativeUpdates();
+void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {

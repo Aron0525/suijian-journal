@@ -24,12 +24,15 @@ python3 server.py
 ## 当前功能
 
 - 每日多条日记记录、自动本地草稿与本机恢复备份（保留最近 3 个保存点）；标题、正文和附件输入后自动保存，快速记录右上角“草稿”可查看全部草稿，点击会粘贴到当前输入框并移除原草稿
-- 单页工作台：写日记、当天片段与日历档案连续呈现；档案支持单日与日期范围筛选，右侧紧凑月历用于选择日期
+- 单页工作台：快速记录、右侧紧凑月历与按最新时间排列的日记档案连续呈现；可直接跳转到特定日期
 - 分别配置整理与汇总提示词的真实模型 API 能力；整理确认后替换并保留原文
 - 右上角搜索窗口与多日区间汇总窗口；AI 当天摘要与跨日汇总均不改写来源日记
+- 右上角“回顾”：年度记录天数、片段数、累计文字、最长连续记录、每月记录、文字情绪线索与高频关键词；所有统计只读，不改动日记
+- 每日写作提醒：可选时间和星期；Android App 用本地通知按时提醒，网页/PWA 在保持打开时显示提醒
 - 快速记录右上角“＋”添加图片或附件：支持 JPG、PNG、WebP、GIF、PDF、TXT/MD 和常见 Office 文件；单个最多 1 MB、最多 4 个、单条合计最多 2.25 MB
 - JSON 完整备份导出与查重导入（包含附件）
 - PWA manifest 与离线缓存
+- 手机 App 更新：网页内容会在启动、回到前台、网络恢复和每 10 分钟自动下载校验后的更新包；“账号”窗口内可手动检查网页更新和新的 Android 安装包
 
 
 ### DeepSeek 配置示例
@@ -62,12 +65,15 @@ python3 server.py
 
 ## Android App（原生安装包）
 
-Android 已使用 Capacitor 原生壳打包，安装包内置 `dist-mobile/` 的页面资源，不通过浏览器打开网站。当前可直接安装的 APK：`岁笺-Android-v1.0-debug.apk`。
+Android 已使用 Capacitor 原生壳打包，安装包内置 `dist-mobile/` 的页面资源，不通过浏览器打开网站。当前 Android 原生版本由 `mobile-version.json` 管理。
 
 - 手机安装：将 APK 传到 Android 手机，打开文件并允许本次“安装未知应用来源”，安装后桌面会出现“岁笺”。
 - 数据：登录与同步仍连接 Supabase；AI 功能仍连接已配置的模型 API；网页资源由 GitHub Pages 发布。
-- 自动更新：安装本次 APK 后，App 会在启动、回到前台、网络恢复及每 10 分钟检查 GitHub Pages 的更新清单；新网页包通过 SHA-256 校验后下载，并在 App 退出、切到后台或下次重开时自动启用。更新异常会继续使用上一份已验证的页面包。
-- 重新打包：在已安装 JDK 21 与 Android SDK 的电脑上运行 `./build-android-apk.sh`。
+- 写作提醒：Android 原生安装包含 Capacitor Local Notifications（本地通知）插件，可在 App 未打开时按所选日期与时间提醒；首次加入该原生能力需要重新安装新 APK，之后网页功能仍可通过现有自动更新下发。
+- 自动网页更新：App 会在启动、回到前台、网络恢复及每 10 分钟检查 GitHub Pages 的更新清单；新网页包通过 SHA-256 校验后下载，并在 App 退出、切到后台或下次重开时自动启用。大多数日常的页面、功能、文案和样式更新都不需要重新下载 APK。
+- 原生安装包更新：通知权限、Capacitor 插件、Android 原生代码等变更会生成新 APK。App 的“账号 → App 更新”会检查并打开最新 APK 下载；下载后 Android 系统会显示安装确认，这是系统限制，不能静默覆盖安装。
+- 签名与发布：`build-android-apk.sh` 生成 `岁笺-Android-v<版本>.apk`、`native-app-update.json` 和 SHA-256 校验值。GitHub Actions 使用仓库 Secrets 中的同一签名身份构建，再把 APK 和清单随 GitHub Pages 发布，确保后续原生安装包可以覆盖安装。
+- 本机重新打包：在已安装 JDK 21 与 Android SDK 的电脑上运行 `npm run build:android`。
 - 回退构建改动：运行 `./rollback-android-apk.sh`。
 
 `npm run build:mobile` 会生成内置网页资源 `dist-mobile/`。移动端 AI 使用 Supabase Edge Function `ai-proxy`，代码在 `supabase/functions/ai-proxy/index.ts`，并要求先登录同步账号；本机 `127.0.0.1` 调试仍使用 `server.py`。

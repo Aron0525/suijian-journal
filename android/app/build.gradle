@@ -1,5 +1,17 @@
 apply plugin: 'com.android.application'
 
+import java.util.Properties
+
+def signingProperties = new Properties()
+def signingFile = rootProject.file('signing.properties')
+if (signingFile.exists()) signingFile.withInputStream { signingProperties.load(it) }
+def signingValue = { String name -> System.getenv("SUJIAN_ANDROID_${name}") ?: signingProperties.getProperty(name.toLowerCase()) }
+def releaseStore = signingValue('KEYSTORE')
+def releaseStorePassword = signingValue('STORE_PASSWORD')
+def releaseAlias = signingValue('KEY_ALIAS')
+def releaseKeyPassword = signingValue('KEY_PASSWORD')
+def hasReleaseSigning = [releaseStore, releaseStorePassword, releaseAlias, releaseKeyPassword].every { it }
+
 android {
     namespace = "com.suijian.journal"
     buildToolsVersion "36.0.0"
@@ -8,8 +20,9 @@ android {
         applicationId "com.suijian.journal"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        def mobileVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../mobile-version.json'))
+        versionCode mobileVersion.versionCode as Integer
+        versionName mobileVersion.versionName as String
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,12 +30,27 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseStore)
+                storePassword releaseStorePassword
+                keyAlias releaseAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+if (gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') } && !hasReleaseSigning) {
+    throw new GradleException('Release signing is not configured. Set SUJIAN_ANDROID_KEYSTORE, SUJIAN_ANDROID_STORE_PASSWORD, SUJIAN_ANDROID_KEY_ALIAS and SUJIAN_ANDROID_KEY_PASSWORD.')
 }
 
 repositories {
