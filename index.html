@@ -65,6 +65,10 @@
               </div>
               <div class="editor-heading-tools">
                 <span id="draft-status" class="draft-status">草稿随输入保存 · 自动备份</span>
+                <button id="draft-library-button" class="draft-library-button" type="button" aria-label="打开草稿箱">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 6.5h5l1.6 2h8.4v9.2a1.8 1.8 0 0 1-1.8 1.8H6.3a1.8 1.8 0 0 1-1.8-1.8z"></path><path d="M4.5 9h15"></path></svg>
+                  <span>草稿</span><span id="draft-library-count" class="draft-library-count" hidden>0</span>
+                </button>
                 <button id="add-attachment" class="editor-attachment-add" type="button" aria-label="添加图片或附件" title="添加图片或附件">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
                 </button>
@@ -171,6 +175,20 @@
         </details>
       </article>
     </template>
+
+    <dialog id="draft-library-dialog" class="workspace-dialog draft-library-dialog" aria-labelledby="draft-library-title">
+      <div class="workspace-dialog-body">
+        <button id="close-draft-library-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭草稿箱">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">自动保存</p>
+            <h1 id="draft-library-title">草稿箱</h1>
+          </div>
+        </div>
+        <p class="dialog-copy">输入内容会自动保存在这里。点击一条草稿，会粘贴到当前日记输入框，并删除这条草稿。</p>
+        <div id="draft-library-list" class="draft-library-list" aria-live="polite"></div>
+      </div>
+    </dialog>
 
     <template id="period-summary-template">
       <article class="period-summary-card card">

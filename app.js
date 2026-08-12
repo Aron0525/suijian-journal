@@ -85,6 +85,7 @@ const state = {
   cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0 },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   backup: { timer: 0 },
+  pastedDraft: null,
 };
 
 const elements = {
@@ -97,6 +98,11 @@ const elements = {
   entryContent: document.querySelector('#entry-content'),
   wordCount: document.querySelector('#word-count'),
   draftStatus: document.querySelector('#draft-status'),
+  draftLibraryButton: document.querySelector('#draft-library-button'),
+  draftLibraryCount: document.querySelector('#draft-library-count'),
+  draftLibraryDialog: document.querySelector('#draft-library-dialog'),
+  closeDraftLibraryDialog: document.querySelector('#close-draft-library-dialog'),
+  draftLibraryList: document.querySelector('#draft-library-list'),
   addAttachment: document.querySelector('#add-attachment'),
   attachmentInput: document.querySelector('#attachment-input'),
   draftAttachments: document.querySelector('#draft-attachments'),
@@ -365,27 +371,146 @@ function draftKey() {
   return `${DRAFT_PREFIX}${state.activeDate}`;
 }
 
-function loadDraft() {
-  const empty = { title: '', content: '', aiSuggestion: '', aiOriginal: '', originalContent: '', attachments: [] };
-  const raw = localStorage.getItem(draftKey());
-  if (!raw) return empty;
+function emptyDraft() {
+  return { title: '', content: '', aiSuggestion: '', aiOriginal: '', originalContent: '', attachments: [], updatedAt: '' };
+}
+
+function normalizeDraft(value) {
+  const draft = value && typeof value === 'object' ? value : {};
+  return {
+    ...emptyDraft(),
+    ...draft,
+    title: typeof draft.title === 'string' ? draft.title.slice(0, MAX_ENTRY_TITLE_CHARS) : '',
+    content: typeof draft.content === 'string' ? draft.content.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
+    aiSuggestion: typeof draft.aiSuggestion === 'string' ? draft.aiSuggestion.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
+    aiOriginal: typeof draft.aiOriginal === 'string' ? draft.aiOriginal.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
+    originalContent: typeof draft.originalContent === 'string' ? draft.originalContent.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
+    attachments: normalizeAttachments(draft.attachments),
+    updatedAt: typeof draft.updatedAt === 'string' ? draft.updatedAt : '',
+  };
+}
+
+function readDraft(storageKey) {
   try {
-    const draft = JSON.parse(raw);
-    return { ...empty, ...draft, attachments: normalizeAttachments(draft.attachments) };
+    const raw = localStorage.getItem(storageKey);
+    return raw ? normalizeDraft(JSON.parse(raw)) : emptyDraft();
   } catch {
-    return empty;
+    return emptyDraft();
   }
 }
 
+function loadDraft() {
+  return readDraft(draftKey());
+}
+
+function editorDraft() {
+  return state.pastedDraft ? normalizeDraft(state.pastedDraft) : loadDraft();
+}
+
+function draftHasContent(draft) {
+  return Boolean(draft.title.trim() || draft.content.trim() || normalizeAttachments(draft.attachments).length);
+}
+
+function savedDrafts() {
+  const drafts = [];
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const storageKey = localStorage.key(index);
+      if (!storageKey?.startsWith(DRAFT_PREFIX)) continue;
+      const date = storageKey.slice(DRAFT_PREFIX.length);
+      if (!isDateKey(date)) continue;
+      const draft = readDraft(storageKey);
+      if (!draftHasContent(draft)) continue;
+      const updatedAt = Date.parse(draft.updatedAt) || Date.parse(`${date}T00:00:00`);
+      drafts.push({ storageKey, date, draft, updatedAt });
+    }
+  } catch {
+    return [];
+  }
+  return drafts.sort((first, second) => second.updatedAt - first.updatedAt || second.date.localeCompare(first.date));
+}
+
+function updateDraftLibraryButton() {
+  const count = savedDrafts().length;
+  elements.draftLibraryCount.textContent = String(count);
+  elements.draftLibraryCount.hidden = count === 0;
+  elements.draftLibraryButton.setAttribute('aria-label', count ? `打开草稿箱，共 ${count} 条草稿` : '打开草稿箱');
+}
+
 function saveDraftObject(draft, message = '草稿已保存') {
-  const normalizedDraft = { ...draft, attachments: normalizeAttachments(draft.attachments) };
+  state.pastedDraft = null;
+  const normalizedDraft = normalizeDraft({ ...draft, updatedAt: new Date().toISOString() });
   localStorage.setItem(draftKey(), JSON.stringify(normalizedDraft));
   elements.draftStatus.textContent = message;
   updateWordCount();
+  updateDraftLibraryButton();
+}
+
+function renderDraftLibrary() {
+  const drafts = savedDrafts();
+  elements.draftLibraryList.replaceChildren();
+  if (!drafts.length) {
+    const empty = document.createElement('p');
+    empty.className = 'draft-library-empty';
+    empty.textContent = '草稿箱还是空的。输入内容后会自动保存。';
+    elements.draftLibraryList.append(empty);
+    return;
+  }
+  drafts.forEach(({ storageKey, date, draft }) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'draft-library-item';
+    const meta = document.createElement('span');
+    meta.className = 'draft-library-meta';
+    const dateValue = parseDateKey(date);
+    meta.textContent = `${dateFormatter.format(dateValue)} · 点击粘贴并移除`;
+    const title = document.createElement('strong');
+    title.textContent = draft.title || '未命名草稿';
+    const preview = document.createElement('span');
+    preview.className = 'draft-library-preview';
+    const attachmentCount = normalizeAttachments(draft.attachments).length;
+    preview.textContent = draft.content.trim() || (attachmentCount ? `含 ${attachmentCount} 个附件` : '只有标题');
+    const action = document.createElement('span');
+    action.className = 'draft-library-action';
+    action.textContent = '粘贴到日记';
+    item.append(meta, title, preview, action);
+    item.addEventListener('click', () => pasteDraftIntoEditor(storageKey));
+    elements.draftLibraryList.append(item);
+  });
+}
+
+function openDraftLibrary() {
+  clearTimeout(draftTimer);
+  const current = { ...editorDraft(), title: elements.entryTitle.value, content: elements.entryContent.value };
+  if (draftHasContent(current)) saveDraft();
+  renderDraftLibrary();
+  openWorkspaceDialog(elements.draftLibraryDialog, elements.draftLibraryList.querySelector('.draft-library-item'));
+}
+
+function closeDraftLibrary() {
+  closeWorkspaceDialog(elements.draftLibraryDialog);
+}
+
+function pasteDraftIntoEditor(storageKey) {
+  const saved = savedDrafts().find((item) => item.storageKey === storageKey);
+  if (!saved) return;
+  clearTimeout(draftTimer);
+  localStorage.removeItem(storageKey);
+  state.pastedDraft = saved.draft;
+  elements.entryTitle.value = saved.draft.title;
+  elements.entryContent.value = saved.draft.content;
+  renderDraftAttachments(saved.draft.attachments);
+  renderEditorAiSuggestion(saved.draft);
+  updateWordCount();
+  updateDraftLibraryButton();
+  closeDraftLibrary();
+  elements.draftStatus.textContent = '草稿已粘贴到输入框，原草稿已删除';
+  elements.entryContent.focus();
+  showToast('草稿已粘贴到日记输入框');
 }
 
 function saveDraft() {
-  const previous = loadDraft();
+  const previous = editorDraft();
   const content = elements.entryContent.value;
   const title = elements.entryTitle.value;
   const isSuggestionStale = previous.aiSuggestion && previous.aiOriginal !== content;
@@ -471,7 +596,7 @@ function readAttachmentFile(file) {
 }
 
 async function attachFiles(files) {
-  const draft = loadDraft();
+  const draft = editorDraft();
   const current = normalizeAttachments(draft.attachments);
   const selected = Array.from(files || []);
   if (!selected.length) return;
@@ -511,7 +636,7 @@ async function attachFiles(files) {
 }
 
 function removeDraftAttachment(id) {
-  const draft = loadDraft();
+  const draft = editorDraft();
   const attachments = normalizeAttachments(draft.attachments).filter((attachment) => attachment.id !== id);
   const updatedDraft = { ...draft, attachments };
   saveDraftObject(updatedDraft, '附件已移除');
@@ -658,12 +783,14 @@ function renderToday() {
   elements.dateLabel.textContent = isToday ? `今天 · ${dateFormatter.format(date)}` : dateFormatter.format(date);
   const count = entriesForDate(state.activeDate).length;
   elements.entryCount.textContent = `${count} 条记录`;
+  state.pastedDraft = null;
   const draft = loadDraft();
   elements.entryTitle.value = draft.title;
   elements.entryContent.value = draft.content;
   renderEditorAiSuggestion(draft);
   renderDraftAttachments(draft.attachments);
   updateWordCount();
+  updateDraftLibraryButton();
 }
 
 function renderEditorAiSuggestion(draft) {
@@ -933,6 +1060,7 @@ function escapeHtml(value) {
 }
 
 function saveNewEntry() {
+  clearTimeout(draftTimer);
   const title = elements.entryTitle.value.trim();
   const content = elements.entryContent.value.trim();
   if (!content) {
@@ -940,7 +1068,7 @@ function saveNewEntry() {
     elements.entryContent.focus();
     return;
   }
-  const draft = loadDraft();
+  const draft = editorDraft();
   const now = new Date().toISOString();
   const entry = {
     id: crypto.randomUUID(),
@@ -958,6 +1086,8 @@ function saveNewEntry() {
     invalidateDailySummary(state.activeDate, now);
   })) return;
   localStorage.removeItem(draftKey());
+  state.pastedDraft = null;
+  updateDraftLibraryButton();
   elements.entryTitle.value = '';
   elements.entryContent.value = '';
   render();
@@ -1216,7 +1346,7 @@ async function organizeDraftWithAI() {
   elements.draftStatus.textContent = '正在请求 AI…';
   try {
     const suggestion = await requestAI(buildOrganizeRequest(getAiConfig(), content));
-    const previous = loadDraft();
+    const previous = editorDraft();
     const draft = { ...previous, title: elements.entryTitle.value, content, aiOriginal: content, aiSuggestion: suggestion };
     saveDraftObject(draft, 'AI 建议已生成，等待确认');
     renderEditorAiSuggestion(draft);
@@ -1230,7 +1360,7 @@ async function organizeDraftWithAI() {
 }
 
 function applyAiSuggestion() {
-  const draft = loadDraft();
+  const draft = editorDraft();
   if (!draft.aiSuggestion || draft.aiOriginal !== elements.entryContent.value) {
     showToast('建议已过期，请重新整理');
     return;
@@ -1251,7 +1381,7 @@ function applyAiSuggestion() {
 }
 
 function dismissAiSuggestion() {
-  const draft = loadDraft();
+  const draft = editorDraft();
   const updatedDraft = { ...draft, aiSuggestion: '', aiOriginal: '' };
   saveDraftObject(updatedDraft, '已保留原文并放弃建议');
   renderEditorAiSuggestion(updatedDraft);
@@ -2265,8 +2395,11 @@ function bindEvents() {
   window.addEventListener('pagehide', syncBeforeLeaving);
   elements.closePeriodSummaryDialog.addEventListener('click', closePeriodSummaryDialog);
   elements.closeSearchDialog.addEventListener('click', closeSearchDialog);
+  elements.draftLibraryButton.addEventListener('click', openDraftLibrary);
+  elements.closeDraftLibraryDialog.addEventListener('click', closeDraftLibrary);
   closeDialogOnBackdrop(elements.periodSummaryDialog, closePeriodSummaryDialog);
   closeDialogOnBackdrop(elements.searchDialog, closeSearchDialog);
+  closeDialogOnBackdrop(elements.draftLibraryDialog, closeDraftLibrary);
   elements.goToday.addEventListener('click', () => {
     state.activeDate = localDateKey();
     state.archiveJumpDate = state.activeDate;
@@ -2281,9 +2414,12 @@ function bindEvents() {
     event.target.value = '';
   });
   elements.clearDraft.addEventListener('click', () => {
+    clearTimeout(draftTimer);
     elements.entryTitle.value = '';
     elements.entryContent.value = '';
+    state.pastedDraft = null;
     localStorage.removeItem(draftKey());
+    updateDraftLibraryButton();
     updateWordCount();
     renderDraftAttachments([]);
     renderEditorAiSuggestion({});

@@ -139,4 +139,19 @@ assert.match(schema, /attachments jsonb not null default '\[\]'::jsonb/);
 assert.match(styles, /\.editor-attachment-add/);
 assert.match(styles, /\.attachment-preview/);
 
+assert.match(index, /id="draft-library-button"/);
+assert.match(index, /id="draft-library-dialog"/);
+assert.match(index, /id="draft-library-list"/);
+assert.match(app, /function savedDrafts\(\)/);
+assert.match(app, /function openDraftLibrary\(\)/);
+assert.match(app, /function pasteDraftIntoEditor\(storageKey\)/);
+assert.match(app, /localStorage\.removeItem\(storageKey\)/);
+assert.match(app, /function updateDraftLibraryButton\(\)/);
+assert.match(app, /function editorDraft\(\)/);
+assert.match(app, /state\.pastedDraft = saved\.draft/);
+assert.match(app, /草稿已粘贴到输入框，原草稿已删除/);
+assert.match(app, /function saveNewEntry\(\) \{\s*clearTimeout\(draftTimer\)/);
+assert.match(styles, /\.draft-library-button/);
+assert.match(styles, /\.draft-library-item/);
+
 console.log('JavaScript security regression checks passed');
