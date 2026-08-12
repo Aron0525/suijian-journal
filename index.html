@@ -20,7 +20,7 @@
           <span class="brand-mark">岁</span>
           <span>岁笺</span>
         </a>
-        <div class="top-actions" aria-label="工具栏">
+        <div class="top-actions" role="group" aria-label="工具栏">
           <div class="top-tools">
             <button id="search-panel-button" class="top-search-action" type="button" aria-label="搜索日记">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="5.8"></circle><path d="m15.2 15.2 4.1 4.1"></path></svg>
@@ -34,6 +34,8 @@
             <span class="top-tool-divider" aria-hidden="true"></span>
             <label class="top-text-action import-label" for="import-input">导入</label>
             <input id="import-input" type="file" accept="application/json,.json" hidden />
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="backup-panel-button" class="top-text-action" type="button">备份</button>
             <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="cloud-sync-button" class="top-text-action" type="button">同步</button>
             <span class="top-tool-divider" aria-hidden="true"></span>
@@ -79,6 +81,18 @@
             </div>
             <label class="sr-only" for="entry-title">记录标题</label>
             <input id="entry-title" class="entry-title" maxlength="80" placeholder="给这段记录取个名字（选填）" />
+            <div class="entry-metadata editor-metadata" role="group" aria-label="为这条日记添加心情和标签">
+              <label>心情
+                <select id="entry-mood">
+                  <option value="">未标记</option><option value="舒展">舒展</option><option value="平静">平静</option><option value="充实">充实</option><option value="开心">开心</option><option value="焦虑">焦虑</option><option value="低落">低落</option><option value="疲惫">疲惫</option><option value="烦躁">烦躁</option>
+                </select>
+              </label>
+              <label class="entry-tags-field">标签
+                <input id="entry-tags" type="text" maxlength="120" placeholder="例如：工作，阅读，运动" list="journal-tag-options" />
+              </label>
+              <span class="entry-metadata-help">用逗号分隔，最多 8 个标签</span>
+            </div>
+            <datalist id="journal-tag-options"></datalist>
             <label class="sr-only" for="entry-content">日记内容</label>
             <textarea id="entry-content" rows="9" maxlength="10000" placeholder="不用组织语言，先把想到的写下来。"></textarea>
             <div id="draft-attachments" class="draft-attachments" hidden aria-live="polite"></div>
@@ -87,10 +101,14 @@
                 <span>AI 整理建议</span>
                 <button id="dismiss-ai-suggestion" class="text-button">放弃建议</button>
               </div>
-              <p id="editor-ai-content" class="ai-content"></p>
+              <div class="ai-compare-grid">
+                <article><span>原文</span><p id="editor-ai-original" class="ai-content"></p></article>
+                <article><span>建议稿</span><p id="editor-ai-content" class="ai-content"></p></article>
+              </div>
+              <div id="ai-suggestion-paragraphs" class="ai-suggestion-paragraphs" aria-live="polite"></div>
               <div class="ai-consent-row">
-                <span>原文本仍在输入框中，确认后才会替换。</span>
-                <button id="apply-ai-suggestion" class="primary-button">采用建议并替换</button>
+                <span>可逐段采用；原文本仍在输入框中，确认后才会整篇替换。</span>
+                <button id="apply-ai-suggestion" class="primary-button">采用完整建议</button>
               </div>
             </section>
             <div class="editor-footer">
@@ -119,7 +137,7 @@
             <div class="weekday-row" aria-hidden="true">
               <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
             </div>
-            <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="日历"></div>
+            <div id="calendar-grid" class="calendar-grid" role="group" aria-label="日历"></div>
             <p class="calendar-legend"><span class="legend-mark"></span>点击日期，跳转到对应的日记档案</p>
           </aside>
         </div>
@@ -147,7 +165,7 @@
                 <span>累计天数</span>
               </div>
             </section>
-            <div class="archive-jump-bar" aria-label="日记档案跳转">
+            <div class="archive-jump-bar" role="group" aria-label="日记档案跳转">
               <label for="archive-jump-date">跳转到日期</label>
               <input id="archive-jump-date" type="date" />
               <button id="archive-jump-button" type="button" class="quiet-button">跳转</button>
@@ -170,6 +188,7 @@
             <button class="entry-delete icon-button" aria-label="删除记录">×</button>
           </div>
         </div>
+        <div class="entry-metadata entry-card-meta" hidden></div>
         <p class="entry-content"></p>
         <details class="original-version" hidden>
           <summary>查看 AI 替换前原文</summary>
@@ -201,13 +220,16 @@
             <p class="eyebrow">回看与提醒</p>
             <h1 id="journal-review-title">记录回顾</h1>
           </div>
-          <label class="review-year-select" for="review-year">回顾年份<select id="review-year" aria-label="选择回顾年份"></select></label>
+          <div class="review-controls">
+            <label class="review-year-select" for="review-range-mode">查看范围<select id="review-range-mode" aria-label="选择回顾范围"><option value="week">本周</option><option value="month">本月</option><option value="year" selected>本年</option></select></label>
+            <label class="review-year-select" for="review-year">回顾年份<select id="review-year" aria-label="选择回顾年份"></select></label>
+          </div>
         </div>
 
         <section class="review-card yearly-review-card card" aria-labelledby="yearly-review-heading">
           <div class="review-card-heading">
             <div>
-              <span class="prompt-kicker">年度回顾</span>
+              <span id="review-scope-kicker" class="prompt-kicker">年度回顾</span>
               <h2 id="yearly-review-heading">这一年的记录</h2>
             </div>
             <span class="review-readonly">只读统计</span>
@@ -219,6 +241,19 @@
             <div><strong id="review-best-streak">0 天</strong><span>最长连续</span></div>
           </div>
           <p id="review-annual-copy" class="review-annual-copy"></p>
+          <section class="review-subsection review-range-insights">
+            <div class="review-subsection-head"><h3>这段时间的线索</h3><span id="review-range-label"></span></div>
+            <p id="review-range-copy" class="review-range-copy"></p>
+          </section>
+          <section class="review-subsection">
+            <div class="review-subsection-head"><h3>连续记录热力图</h3><span>颜色越深，记录越多</span></div>
+            <div id="review-heatmap" class="review-heatmap" aria-label="连续记录热力图"></div>
+          </section>
+          <section class="review-subsection">
+            <div class="review-subsection-head"><h3>从日记提取的待办</h3><span>勾选后会保留完成状态</span></div>
+            <div id="review-task-list" class="review-task-list" aria-live="polite"></div>
+          </section>
+          <div id="review-yearly-details">
           <div class="review-subsection">
             <div class="review-subsection-head"><h3>每月记录</h3><span>按条数</span></div>
             <div id="review-monthly-activity" class="review-monthly-activity" aria-live="polite"></div>
@@ -231,6 +266,7 @@
             <div class="review-subsection-head"><h3>高频关键词</h3><span>自动去除常用词</span></div>
             <div id="review-keywords" class="review-keywords" aria-live="polite"></div>
           </div>
+          </div>
         </section>
 
         <form id="reminder-form" class="reminder-card card">
@@ -241,7 +277,7 @@
             </div>
             <label class="reminder-toggle"><input id="reminder-enabled" type="checkbox" /><span>开启提醒</span></label>
           </div>
-          <p class="reminder-copy">Android App 会使用本地通知；网页/PWA 在保持打开时显示提醒和系统通知。</p>
+          <p class="reminder-copy">当天已经保存日记时，会跳过当日提醒；Android App 与网页都会在下次排程时按此规则更新。</p>
           <div class="reminder-controls">
             <label class="reminder-time-field">提醒时间<input id="reminder-time" type="time" value="21:30" required /></label>
             <fieldset class="reminder-days">
@@ -257,7 +293,7 @@
           </div>
           <div class="reminder-footer">
             <p id="reminder-status" role="status" aria-live="polite">未开启每日提醒。</p>
-            <button type="submit" class="primary-button">保存提醒</button>
+            <div class="reminder-actions"><button id="reminder-snooze" type="button" class="quiet-button">稍后 1 小时</button><button id="reminder-skip-today" type="button" class="quiet-button">今天跳过</button><button type="submit" class="primary-button">保存提醒</button></div>
           </div>
         </form>
       </div>
@@ -320,8 +356,30 @@
         <section class="search-card card">
           <label class="sr-only" for="search-input">搜索日记</label>
           <input id="search-input" class="search-input" type="search" placeholder="输入关键词、标题或标签" />
+          <div class="search-filters" aria-label="搜索筛选条件">
+            <label>从<input id="search-start-date" type="date" /></label>
+            <label>到<input id="search-end-date" type="date" /></label>
+            <label>标签<input id="search-tag-filter" type="text" placeholder="任一标签" list="journal-tag-options" /></label>
+            <label>心情<select id="search-mood-filter"><option value="">全部心情</option><option value="舒展">舒展</option><option value="平静">平静</option><option value="充实">充实</option><option value="开心">开心</option><option value="焦虑">焦虑</option><option value="低落">低落</option><option value="疲惫">疲惫</option><option value="烦躁">烦躁</option></select></label>
+            <label class="search-attachment-filter"><input id="search-has-attachment" type="checkbox" />含图片/附件</label>
+            <button id="clear-search-filters" type="button" class="quiet-button">清除筛选</button>
+          </div>
           <div id="search-results" class="search-results"></div>
         </section>
+      </div>
+    </dialog>
+
+
+    <dialog id="backup-dialog" class="workspace-dialog backup-dialog" aria-labelledby="backup-title">
+      <div class="workspace-dialog-body">
+        <button id="close-backup-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭备份与恢复窗口">×</button>
+        <div class="section-heading"><div><p class="eyebrow">数据保护</p><h1 id="backup-title">备份与恢复</h1></div></div>
+        <p class="dialog-copy">每次保存会保留最近 3 份本机自动备份。恢复会先保留当前状态为新备份，再替换本机数据。</p>
+        <section class="backup-actions card">
+          <div><span class="prompt-kicker">手动导出</span><h2>带走一份可读副本</h2></div>
+          <div class="backup-action-buttons"><button id="backup-export-json" type="button" class="quiet-button">导出 JSON</button><button id="backup-export-markdown" type="button" class="quiet-button">导出 Markdown</button><button id="backup-export-zip" type="button" class="primary-button">导出 ZIP</button></div>
+        </section>
+        <section class="backup-snapshots card"><div class="review-card-heading"><div><span class="prompt-kicker">自动备份</span><h2>最近快照</h2></div><span id="backup-status" class="review-readonly">正在读取</span></div><div id="backup-snapshot-list" class="backup-snapshot-list" aria-live="polite"></div></section>
       </div>
     </dialog>
 
@@ -473,6 +531,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260812-mobile-ota" defer></script>
+    <script src="./app.js?release=20260812-journal-completion" defer></script>
   </body>
 </html>

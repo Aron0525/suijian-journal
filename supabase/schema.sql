@@ -125,3 +125,75 @@ create policy "own period summaries" on public.period_summaries
 for all to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+-- Journal entry metadata remains inside `attachments` as { files, tags, mood } so older
+-- deployed clients keep synchronizing while the product gains tags and a mood field.
+create table if not exists public.journal_tasks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  entry_id uuid not null references public.journal_entries(id) on delete cascade,
+  source_key text not null,
+  content text not null,
+  completed boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  unique (user_id, source_key)
+);
+
+create index if not exists journal_tasks_user_updated_idx
+  on public.journal_tasks (user_id, updated_at desc)
+  where deleted_at is null;
+
+drop trigger if exists journal_tasks_touch_updated_at on public.journal_tasks;
+drop trigger if exists journal_tasks_reject_stale_update on public.journal_tasks;
+create trigger journal_tasks_reject_stale_update before update on public.journal_tasks
+for each row execute function public.reject_stale_update();
+create trigger journal_tasks_touch_updated_at before update on public.journal_tasks
+for each row execute function public.touch_updated_at();
+
+alter table public.journal_tasks enable row level security;
+grant select, insert, update, delete on table public.journal_tasks to authenticated;
+drop policy if exists "own journal tasks" on public.journal_tasks;
+create policy "own journal tasks" on public.journal_tasks
+for all to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'journal-attachments',
+  'journal-attachments',
+  false,
+  1048576,
+  array[
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf',
+    'text/plain', 'text/markdown', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ]
+)
+on conflict (id) do update
+set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "own journal attachments select" on storage.objects;
+create policy "own journal attachments select" on storage.objects
+for select to authenticated
+using (bucket_id = 'journal-attachments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "own journal attachments insert" on storage.objects;
+create policy "own journal attachments insert" on storage.objects
+for insert to authenticated
+with check (bucket_id = 'journal-attachments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "own journal attachments update" on storage.objects;
+create policy "own journal attachments update" on storage.objects
+for update to authenticated
+using (bucket_id = 'journal-attachments' and (storage.foldername(name))[1] = auth.uid()::text)
+with check (bucket_id = 'journal-attachments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "own journal attachments delete" on storage.objects;
+create policy "own journal attachments delete" on storage.objects
+for delete to authenticated
+using (bucket_id = 'journal-attachments' and (storage.foldername(name))[1] = auth.uid()::text);

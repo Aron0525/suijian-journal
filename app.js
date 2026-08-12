@@ -25,6 +25,10 @@ const AUTO_BACKUP_STORE = 'recovery-snapshots';
 const AUTO_BACKUP_SNAPSHOT_COUNT = 3;
 const AUTO_BACKUP_DELAY_MS = 800;
 const MAX_ENTRY_TITLE_CHARS = 80;
+const MAX_ENTRY_TAGS = 8;
+const MAX_ENTRY_TAG_CHARS = 18;
+const JOURNAL_MOODS = Object.freeze(['舒展', '平静', '充实', '开心', '焦虑', '低落', '疲惫', '烦躁']);
+const JOURNAL_ATTACHMENT_BUCKET = 'journal-attachments';
 const MAX_ENTRY_CONTENT_CHARS = 10000;
 const MAX_SUMMARY_CHARS = 60000;
 const SESSION_REMEMBER_MS = 2 * 24 * 60 * 60 * 1000;
@@ -33,7 +37,7 @@ const MOBILE_OTA_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/app-
 const MOBILE_OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/native-app-update.json';
 const REMINDER_SETTINGS_KEY = 'suijian-writing-reminder-v1';
-const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7] });
+const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7], skipDate: '', snoozedUntil: '' });
 let runtimeAiApiKey = '';
 const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
@@ -85,12 +89,13 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0 },
+  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, tasksSupported: null },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
   pastedDraft: null,
   reviewYear: new Date().getFullYear(),
+  reviewMode: 'year',
   reminder: { settings: loadReminderSettings(), status: '', timer: 0 },
 };
 
@@ -101,6 +106,9 @@ const elements = {
   entryCount: document.querySelector('#entry-count'),
   goToday: document.querySelector('#go-today'),
   entryTitle: document.querySelector('#entry-title'),
+  entryMood: document.querySelector('#entry-mood'),
+  entryTags: document.querySelector('#entry-tags'),
+  journalTagOptions: document.querySelector('#journal-tag-options'),
   entryContent: document.querySelector('#entry-content'),
   wordCount: document.querySelector('#word-count'),
   draftStatus: document.querySelector('#draft-status'),
@@ -117,6 +125,8 @@ const elements = {
   editOrganizePrompt: document.querySelector('#edit-organize-prompt'),
   editorAiResult: document.querySelector('#editor-ai-result'),
   editorAiContent: document.querySelector('#editor-ai-content'),
+  editorAiOriginal: document.querySelector('#editor-ai-original'),
+  aiSuggestionParagraphs: document.querySelector('#ai-suggestion-paragraphs'),
   applyAiSuggestion: document.querySelector('#apply-ai-suggestion'),
   dismissAiSuggestion: document.querySelector('#dismiss-ai-suggestion'),
   saveEntry: document.querySelector('#save-entry'),
@@ -144,12 +154,25 @@ const elements = {
   editPeriodSummaryPrompt: document.querySelector('#edit-period-summary-prompt'),
   periodSummaryList: document.querySelector('#period-summary-list'),
   searchInput: document.querySelector('#search-input'),
+  searchStartDate: document.querySelector('#search-start-date'),
+  searchEndDate: document.querySelector('#search-end-date'),
+  searchTagFilter: document.querySelector('#search-tag-filter'),
+  searchMoodFilter: document.querySelector('#search-mood-filter'),
+  searchHasAttachment: document.querySelector('#search-has-attachment'),
+  clearSearchFilters: document.querySelector('#clear-search-filters'),
   searchResults: document.querySelector('#search-results'),
   summaryPanelButton: document.querySelector('#summary-panel-button'),
   reviewPanelButton: document.querySelector('#review-panel-button'),
   reviewDialog: document.querySelector('#review-dialog'),
   closeReviewDialog: document.querySelector('#close-review-dialog'),
   reviewYear: document.querySelector('#review-year'),
+  reviewRangeMode: document.querySelector('#review-range-mode'),
+  reviewScopeKicker: document.querySelector('#review-scope-kicker'),
+  reviewRangeLabel: document.querySelector('#review-range-label'),
+  reviewRangeCopy: document.querySelector('#review-range-copy'),
+  reviewYearlyDetails: document.querySelector('#review-yearly-details'),
+  reviewHeatmap: document.querySelector('#review-heatmap'),
+  reviewTaskList: document.querySelector('#review-task-list'),
   reviewDayCount: document.querySelector('#review-day-count'),
   reviewEntryCount: document.querySelector('#review-entry-count'),
   reviewWordCount: document.querySelector('#review-word-count'),
@@ -163,7 +186,17 @@ const elements = {
   reminderTime: document.querySelector('#reminder-time'),
   reminderDayInputs: document.querySelectorAll('[data-reminder-day]'),
   reminderStatus: document.querySelector('#reminder-status'),
+  reminderSnooze: document.querySelector('#reminder-snooze'),
+  reminderSkipToday: document.querySelector('#reminder-skip-today'),
   searchPanelButton: document.querySelector('#search-panel-button'),
+  backupPanelButton: document.querySelector('#backup-panel-button'),
+  backupDialog: document.querySelector('#backup-dialog'),
+  closeBackupDialog: document.querySelector('#close-backup-dialog'),
+  backupSnapshotList: document.querySelector('#backup-snapshot-list'),
+  backupStatus: document.querySelector('#backup-status'),
+  backupExportJson: document.querySelector('#backup-export-json'),
+  backupExportMarkdown: document.querySelector('#backup-export-markdown'),
+  backupExportZip: document.querySelector('#backup-export-zip'),
   cloudSyncButton: document.querySelector('#cloud-sync-button'),
   cloudAccountButton: document.querySelector('#cloud-account-button'),
   accountDialog: document.querySelector('#account-dialog'),
@@ -233,7 +266,7 @@ const elements = {
 };
 
 function emptyCloudMeta() {
-  return { accountId: '', dirty: { entries: [], dailySummaries: [], periodSummaries: [] } };
+  return { accountId: '', dirty: { entries: [], dailySummaries: [], periodSummaries: [], tasks: [] } };
 }
 
 function loadCloudActivity() {
@@ -300,6 +333,7 @@ function normalizeCloudMeta(value) {
       entries: Array.isArray(dirty.entries) ? [...new Set(dirty.entries.filter(Boolean))] : [],
       dailySummaries: Array.isArray(dirty.dailySummaries) ? [...new Set(dirty.dailySummaries.filter(Boolean))] : [],
       periodSummaries: Array.isArray(dirty.periodSummaries) ? [...new Set(dirty.periodSummaries.filter(Boolean))] : [],
+      tasks: Array.isArray(dirty.tasks) ? [...new Set(dirty.tasks.filter(Boolean))] : [],
     },
   };
 }
@@ -309,13 +343,14 @@ function loadData() {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : { entries: [], summaries: {}, periodSummaries: [] };
     return {
-      entries: Array.isArray(parsed.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments) })) : [],
+      entries: Array.isArray(parsed.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments), tags: normalizeTags(entry?.tags), mood: normalizeMood(entry?.mood) })) : [],
       summaries: parsed.summaries && typeof parsed.summaries === 'object' ? parsed.summaries : {},
       periodSummaries: Array.isArray(parsed.periodSummaries) ? parsed.periodSummaries : [],
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks.map(normalizeJournalTask).filter(Boolean) : [],
       cloudSync: normalizeCloudMeta(parsed.cloudSync),
     };
   } catch {
-    return { entries: [], summaries: {}, periodSummaries: [], cloudSync: emptyCloudMeta() };
+    return { entries: [], summaries: {}, periodSummaries: [], tasks: [], cloudSync: emptyCloudMeta() };
   }
 }
 
@@ -395,12 +430,79 @@ function writingRhythm() {
   };
 }
 
+
+function normalizeTags(value) {
+  const raw = Array.isArray(value) ? value : String(value || '').split(/[，,、\n]/);
+  const seen = new Set();
+  return raw.reduce((tags, candidate) => {
+    const tag = String(candidate || '').trim().replace(/\s+/g, ' ').slice(0, MAX_ENTRY_TAG_CHARS);
+    const key = tag.toLocaleLowerCase();
+    if (!tag || seen.has(key) || tags.length >= MAX_ENTRY_TAGS) return tags;
+    seen.add(key);
+    tags.push(tag);
+    return tags;
+  }, []);
+}
+
+function normalizeMood(value) {
+  const mood = String(value || '').trim();
+  return JOURNAL_MOODS.includes(mood) ? mood : '';
+}
+
+function entryTagsLabel(tags) {
+  return normalizeTags(tags).join(' · ');
+}
+
+function entryMetadataValues(entry) {
+  return { mood: normalizeMood(entry?.mood), tags: normalizeTags(entry?.tags) };
+}
+
+function renderEntryMetadata(target, entry) {
+  if (!target) return;
+  const { mood, tags } = entryMetadataValues(entry);
+  target.replaceChildren();
+  target.hidden = !mood && !tags.length;
+  if (mood) {
+    const moodChip = document.createElement('span');
+    moodChip.className = `entry-mood-chip mood-${mood}`;
+    moodChip.textContent = mood;
+    target.append(moodChip);
+  }
+  tags.forEach((tag) => {
+    const chip = document.createElement('span');
+    chip.className = 'entry-tag-chip';
+    chip.textContent = `# ${tag}`;
+    target.append(chip);
+  });
+}
+
+function refreshJournalTagOptions() {
+  if (!elements.journalTagOptions) return;
+  const tags = [...new Set(state.data.entries.flatMap((entry) => normalizeTags(entry.tags)))].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  elements.journalTagOptions.replaceChildren();
+  tags.forEach((tag) => {
+    const option = document.createElement('option');
+    option.value = tag;
+    elements.journalTagOptions.append(option);
+  });
+}
+
+function attachmentPayload(value) {
+  if (Array.isArray(value)) return { files: value, tags: [], mood: '' };
+  if (!value || typeof value !== 'object') return { files: [], tags: [], mood: '' };
+  return { files: Array.isArray(value.files) ? value.files : [], tags: normalizeTags(value.tags), mood: normalizeMood(value.mood) };
+}
+
+function cloudAttachmentPayload(entry) {
+  return { files: normalizeAttachments(entry.attachments), tags: normalizeTags(entry.tags), mood: normalizeMood(entry.mood) };
+}
+
 function draftKey() {
   return `${DRAFT_PREFIX}${state.activeDate}`;
 }
 
 function emptyDraft() {
-  return { title: '', content: '', aiSuggestion: '', aiOriginal: '', originalContent: '', attachments: [], updatedAt: '' };
+  return { title: '', content: '', tags: [], mood: '', aiSuggestion: '', aiOriginal: '', originalContent: '', attachments: [], updatedAt: '' };
 }
 
 function normalizeDraft(value) {
@@ -409,6 +511,8 @@ function normalizeDraft(value) {
     ...emptyDraft(),
     ...draft,
     title: typeof draft.title === 'string' ? draft.title.slice(0, MAX_ENTRY_TITLE_CHARS) : '',
+    tags: normalizeTags(draft.tags),
+    mood: normalizeMood(draft.mood),
     content: typeof draft.content === 'string' ? draft.content.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
     aiSuggestion: typeof draft.aiSuggestion === 'string' ? draft.aiSuggestion.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
     aiOriginal: typeof draft.aiOriginal === 'string' ? draft.aiOriginal.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
@@ -595,6 +699,133 @@ function journalReview(year) {
   };
 }
 
+function reviewRange(mode = state.reviewMode) {
+  const today = parseDateKey(localDateKey());
+  if (mode === 'year') {
+    const start = dateKeyFromParts(state.reviewYear, 0, 1);
+    const end = dateKeyFromParts(state.reviewYear, 11, 31);
+    return { mode, start, end, label: `${state.reviewYear} 年`, title: '这一年的记录', kicker: '年度回顾', entries: entriesForPeriod(start, end) };
+  }
+  if (mode === 'month') {
+    const start = dateKeyFromParts(today.getFullYear(), today.getMonth(), 1);
+    const end = dateKeyFromParts(today.getFullYear(), today.getMonth() + 1, 0);
+    return { mode, start, end, label: `${today.getFullYear()} 年 ${today.getMonth() + 1} 月`, title: '这个月的记录', kicker: '月回顾', entries: entriesForPeriod(start, end) };
+  }
+  const weekday = (today.getDay() + 6) % 7;
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - weekday);
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + 6);
+  const start = localDateKey(startDate);
+  const end = localDateKey(endDate);
+  return { mode: 'week', start, end, label: `${start.slice(5).replace('-', ' 月 ')} 日 — ${end.slice(5).replace('-', ' 月 ')} 日`, title: '这一周的记录', kicker: '周回顾', entries: entriesForPeriod(start, end) };
+}
+
+function scopedReviewStats(entries, label) {
+  const days = new Set(entries.map((entry) => entry.date));
+  const emotions = { 舒展: 0, 平静: 0, 低落: 0 };
+  entries.forEach((entry) => {
+    const fromText = reviewEmotionCounts(`${entry.title || ''}\n${entry.content || ''}`);
+    const selectedMood = normalizeMood(entry.mood);
+    Object.keys(emotions).forEach((mood) => { emotions[mood] += fromText[mood]; });
+    if (selectedMood === '舒展' || selectedMood === '开心' || selectedMood === '充实') emotions.舒展 += 1;
+    if (selectedMood === '平静') emotions.平静 += 1;
+    if (selectedMood === '焦虑' || selectedMood === '低落' || selectedMood === '疲惫' || selectedMood === '烦躁') emotions.低落 += 1;
+  });
+  const keywords = commonKeywords(entries);
+  const focus = [...new Map(entries.flatMap((entry) => normalizeTags(entry.tags)).map((tag) => [tag, 0])).keys()];
+  const dominant = dominantReviewEmotion(emotions);
+  const summary = !entries.length
+    ? `${label}还没有日记。写下第一条后，这里会出现主题、情绪和计划线索。`
+    : `${label}共记录 ${entries.length} 条，覆盖 ${days.size} 天。${focus.length ? `最常标记为 ${focus.slice(0, 4).join('、')}。` : ''}${keywords.length ? `文字里反复出现 ${keywords.slice(0, 4).map((item) => item.word).join('、')}。` : ''}${dominant === '未标记' ? '' : `整体更接近“${dominant}”的情绪线索。`}`;
+  return { totalDays: days.size, totalEntries: entries.length, totalWords: entries.reduce((sum, entry) => sum + reviewCharacterCount(entry), 0), bestStreak: longestReviewStreak(entries), keywords, dominant, summary };
+}
+
+function normalizeJournalTask(value) {
+  if (!value || typeof value !== 'object' || !isUuid(value.id) || !isUuid(value.entryId)) return null;
+  const text = String(value.text || '').trim().slice(0, 180);
+  const sourceKey = String(value.sourceKey || '').trim().slice(0, 260);
+  if (!text || !sourceKey) return null;
+  return { id: value.id, entryId: value.entryId, sourceKey, text, completed: Boolean(value.completed), createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString(), updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(), ...(typeof value.deletedAt === 'string' ? { deletedAt: value.deletedAt } : {}) };
+}
+
+function extractJournalTasks(entries) {
+  const candidates = [];
+  entries.forEach((entry) => {
+    const source = `${entry.title || ''}\n${entry.content || ''}`;
+    const matches = [...source.matchAll(/(?:待办|TODO|Todo|计划)[：:]\s*([^\n。！？!?]+)/g)];
+    matches.forEach((match, matchIndex) => {
+      match[1].split(/[、，,；;]/).map((item) => item.trim()).filter((item) => item.length >= 2).slice(0, 5).forEach((text, index) => {
+        candidates.push({ entryId: entry.id, sourceKey: `${entry.id}:${matchIndex}:${index}:${text}`, text: text.slice(0, 180) });
+      });
+    });
+  });
+  return candidates;
+}
+
+function ensureExtractedJournalTasks(entries) {
+  const known = new Set(state.data.tasks.filter((task) => !task.deletedAt).map((task) => task.sourceKey));
+  const now = new Date().toISOString();
+  const additions = extractJournalTasks(entries).filter((task) => !known.has(task.sourceKey)).map((task) => ({ ...task, id: crypto.randomUUID(), completed: false, createdAt: now, updatedAt: now }));
+  if (!additions.length) return;
+  state.data.tasks.push(...additions);
+  additions.forEach((task) => markCloudDirty('tasks', task.id));
+  persistData();
+}
+
+function reviewTasks(entries) {
+  const sourceIds = new Set(entries.map((entry) => entry.id));
+  return state.data.tasks.filter((task) => !task.deletedAt && sourceIds.has(task.entryId)).sort((first, second) => Number(first.completed) - Number(second.completed) || new Date(second.updatedAt) - new Date(first.updatedAt));
+}
+
+function renderReviewTasks(entries) {
+  ensureExtractedJournalTasks(entries);
+  const tasks = reviewTasks(entries);
+  elements.reviewTaskList.replaceChildren();
+  if (!tasks.length) {
+    const empty = document.createElement('p');
+    empty.className = 'review-empty';
+    empty.textContent = '在日记中写“待办：……”或“计划：……”，这里会自动列出。';
+    elements.reviewTaskList.append(empty);
+    return;
+  }
+  tasks.forEach((task) => {
+    const label = document.createElement('label');
+    label.className = 'review-task';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = task.completed;
+    const copy = document.createElement('span');
+    copy.textContent = task.text;
+    label.append(input, copy);
+    input.addEventListener('change', () => {
+      const now = new Date().toISOString();
+      if (!persistDataChange(() => { task.completed = input.checked; task.updatedAt = now; markCloudDirty('tasks', task.id); })) return;
+      renderReviewTasks(reviewRange().entries);
+    });
+    elements.reviewTaskList.append(label);
+  });
+}
+
+function renderReviewHeatmap(year) {
+  elements.reviewHeatmap.replaceChildren();
+  const counts = new Map();
+  reviewEntriesForYear(year).forEach((entry) => counts.set(entry.date, (counts.get(entry.date) || 0) + 1));
+  const first = parseDateKey(`${year}-01-01`);
+  const last = parseDateKey(`${year}-12-31`);
+  const start = new Date(first);
+  start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+  for (let date = new Date(start); date <= last; date.setDate(date.getDate() + 1)) {
+    const key = localDateKey(date);
+    const count = counts.get(key) || 0;
+    const cell = document.createElement('span');
+    cell.className = `review-heatmap-cell heat-${Math.min(count, 4)}`;
+    cell.title = `${key} · ${count} 条`;
+    cell.setAttribute('aria-label', cell.title);
+    elements.reviewHeatmap.append(cell);
+  }
+}
+
 function renderReviewStat(target, value) {
   target.textContent = value;
 }
@@ -617,16 +848,29 @@ function renderReview() {
     option.selected = year === state.reviewYear;
     elements.reviewYear.append(option);
   });
+  elements.reviewRangeMode.value = state.reviewMode;
+  elements.reviewYear.closest('label').hidden = state.reviewMode !== 'year';
 
-  const review = journalReview(state.reviewYear);
-  renderReviewStat(elements.reviewDayCount, `${review.totalDays} 天`);
-  renderReviewStat(elements.reviewEntryCount, `${review.totalEntries} 条`);
-  renderReviewStat(elements.reviewWordCount, `${review.totalWords} 字`);
-  renderReviewStat(elements.reviewBestStreak, `${review.bestStreak} 天`);
-  elements.reviewAnnualCopy.textContent = review.summary;
+  const annual = journalReview(state.reviewYear);
+  const range = reviewRange();
+  const scoped = scopedReviewStats(range.entries, range.label);
+  elements.reviewScopeKicker.textContent = range.kicker;
+  document.querySelector('#yearly-review-heading').textContent = range.title;
+  elements.reviewRangeLabel.textContent = range.label;
+  elements.reviewYearlyDetails.hidden = range.mode !== 'year';
+  renderReviewStat(elements.reviewDayCount, `${scoped.totalDays} 天`);
+  renderReviewStat(elements.reviewEntryCount, `${scoped.totalEntries} 条`);
+  renderReviewStat(elements.reviewWordCount, `${scoped.totalWords} 字`);
+  renderReviewStat(elements.reviewBestStreak, `${scoped.bestStreak} 天`);
+  elements.reviewAnnualCopy.textContent = scoped.summary;
+  elements.reviewRangeCopy.textContent = scoped.totalEntries
+    ? `主要关注：${scoped.keywords.length ? scoped.keywords.slice(0, 5).map((item) => item.word).join('、') : '继续记录更多细节'}。情绪变化线索：${scoped.dominant === '未标记' ? '暂未识别到明显倾向' : `整体偏向${scoped.dominant}`}。下方待办来自日记正文，可直接勾选完成。`
+    : '这段时间还没有内容，回顾会随着记录自动补齐。';
+  renderReviewHeatmap(state.reviewYear);
+  renderReviewTasks(range.entries);
 
   elements.reviewMonthlyActivity.replaceChildren();
-  review.monthly.forEach((month) => {
+  annual.monthly.forEach((month) => {
     const item = document.createElement('article');
     item.className = 'review-month-item';
     const label = document.createElement('span');
@@ -640,7 +884,7 @@ function renderReview() {
   });
 
   elements.reviewEmotionTrend.replaceChildren();
-  review.monthly.forEach((month) => {
+  annual.monthly.forEach((month) => {
     const item = document.createElement('div');
     item.className = 'review-emotion-item';
     const label = document.createElement('span');
@@ -654,13 +898,13 @@ function renderReview() {
   });
 
   elements.reviewKeywords.replaceChildren();
-  if (!review.keywords.length) {
+  if (!annual.keywords.length) {
     const empty = document.createElement('span');
     empty.className = 'review-empty';
     empty.textContent = '记录多一些后，这里会出现反复关注的主题。';
     elements.reviewKeywords.append(empty);
   } else {
-    review.keywords.forEach(({ word, count }) => {
+    annual.keywords.forEach(({ word, count }) => {
       const keyword = document.createElement('span');
       keyword.className = 'review-keyword';
       keyword.textContent = `${word} · ${count}`;
@@ -668,7 +912,6 @@ function renderReview() {
     });
   }
 }
-
 function normalizeReminderSettings(value) {
   const candidate = value && typeof value === 'object' ? value : {};
   const time = typeof candidate.time === 'string' && /^\d{2}:\d{2}$/.test(candidate.time) ? candidate.time : DEFAULT_REMINDER_SETTINGS.time;
@@ -677,10 +920,14 @@ function normalizeReminderSettings(value) {
   const days = [...new Set((Array.isArray(candidate.days) ? candidate.days : DEFAULT_REMINDER_SETTINGS.days)
     .map(Number)
     .filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))].sort((first, second) => first - second);
+  const skipDate = isDateKey(candidate.skipDate) ? candidate.skipDate : '';
+  const snoozeTimestamp = Date.parse(candidate.snoozedUntil);
   return {
     enabled: Boolean(candidate.enabled),
     time: validTime ? time : DEFAULT_REMINDER_SETTINGS.time,
     days: days.length ? days : [...DEFAULT_REMINDER_SETTINGS.days],
+    skipDate,
+    snoozedUntil: Number.isFinite(snoozeTimestamp) && snoozeTimestamp > Date.now() ? new Date(snoozeTimestamp).toISOString() : '',
   };
 }
 
@@ -726,6 +973,22 @@ function nativeLocalNotifications() {
   return capacitor.Plugins?.LocalNotifications ?? capacitor.registerPlugin?.('LocalNotifications') ?? null;
 }
 
+function hasEntryForDate(date) {
+  return entriesForDate(date).length > 0;
+}
+
+function nextReminderDateForWeekday(weekday, time) {
+  const now = new Date();
+  const [hour, minute] = time.split(':').map(Number);
+  const target = new Date(now);
+  target.setHours(hour, minute, 0, 0);
+  const currentWeekday = now.getDay() + 1;
+  let daysAhead = (weekday - currentWeekday + 7) % 7;
+  if (daysAhead === 0 && (target <= now || hasEntryForDate(localDateKey(now)) || state.reminder.settings.skipDate === localDateKey(now))) daysAhead = 7;
+  target.setDate(target.getDate() + daysAhead);
+  return target;
+}
+
 async function scheduleNativeReminders(settings, { requestPermission = false } = {}) {
   const notifications = nativeLocalNotifications();
   if (!notifications) return null;
@@ -738,15 +1001,8 @@ async function scheduleNativeReminders(settings, { requestPermission = false } =
   if (permission.display !== 'granted' && requestPermission) permission = await notifications.requestPermissions();
   if (permission.display !== 'granted') return { message: '请允许 App 的通知权限后，提醒才会按时送达。' };
 
-  const [hour, minute] = settings.time.split(':').map(Number);
   if (typeof notifications.createChannel === 'function') {
-    await notifications.createChannel({
-      id: REMINDER_CHANNEL_ID,
-      name: '写日记提醒',
-      description: '岁笺的每日写日记提醒',
-      importance: 3,
-      visibility: 1,
-    });
+    await notifications.createChannel({ id: REMINDER_CHANNEL_ID, name: '写日记提醒', description: '岁笺的每日写日记提醒', importance: 3, visibility: 1 });
   }
   await notifications.cancel({ notifications: scheduled });
   await notifications.schedule({
@@ -755,30 +1011,32 @@ async function scheduleNativeReminders(settings, { requestPermission = false } =
       title: '岁笺',
       body: '留一点时间，写下今天。',
       channelId: REMINDER_CHANNEL_ID,
-      schedule: { on: { weekday, hour, minute }, allowWhileIdle: true },
+      schedule: { at: nextReminderDateForWeekday(weekday, settings.time), repeats: true, allowWhileIdle: true },
     })),
   });
-  return { message: `App 提醒已设为${reminderSettingsLabel(settings)}。` };
+  return { message: `App 提醒已设为${reminderDaysLabel(settings.days)} ${settings.time}；当天已写日记会顺延到下次。` };
 }
-
 function stopBrowserReminder() {
   clearTimeout(state.reminder.timer);
   state.reminder.timer = 0;
 }
 
 function nextBrowserReminderAt(settings, now = new Date()) {
+  const snoozed = Date.parse(settings.snoozedUntil);
+  if (Number.isFinite(snoozed) && snoozed > now.getTime() && !hasEntryForDate(localDateKey(new Date(snoozed)))) return new Date(snoozed);
   const [hour, minute] = settings.time.split(':').map(Number);
-  for (let offset = 0; offset <= 7; offset += 1) {
+  for (let offset = 0; offset <= 14; offset += 1) {
     const candidate = new Date(now);
     candidate.setDate(candidate.getDate() + offset);
     candidate.setHours(hour, minute, 0, 0);
-    if (candidate <= now || !settings.days.includes(candidate.getDay() + 1)) continue;
+    const key = localDateKey(candidate);
+    if (candidate <= now || !settings.days.includes(candidate.getDay() + 1) || hasEntryForDate(key) || settings.skipDate === key) continue;
     return candidate;
   }
   return null;
 }
-
 function notifyBrowserReminder() {
+  if (hasEntryForDate(localDateKey()) || state.reminder.settings.skipDate === localDateKey()) return;
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification('岁笺', { body: '留一点时间，写下今天。', icon: './icons/icon-192.png' });
   } else {
@@ -840,6 +1098,23 @@ async function saveReminderSettings() {
   }
 }
 
+async function snoozeReminder() {
+  const until = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const settings = persistReminderSettings({ ...state.reminder.settings, snoozedUntil: until, skipDate: '' });
+  try { await applyReminderSchedule(settings); } catch { /* the local setting remains and will be retried */ }
+  state.reminder.status = `已稍后提醒，预计 ${new Date(until).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })} 再提醒。`;
+  renderReminderSettings();
+  showToast('已设置 1 小时后提醒');
+}
+
+async function skipReminderToday() {
+  const settings = persistReminderSettings({ ...state.reminder.settings, skipDate: localDateKey(), snoozedUntil: '' });
+  try { await applyReminderSchedule(settings); } catch { /* saved for next app start */ }
+  state.reminder.status = '今天已跳过提醒；明天会按原计划继续。';
+  renderReminderSettings();
+  showToast('今天不再提醒');
+}
+
 async function initializeWritingReminders() {
   try {
     const result = await applyReminderSchedule(state.reminder.settings);
@@ -895,7 +1170,7 @@ function renderDraftLibrary() {
 
 function openDraftLibrary() {
   clearTimeout(draftTimer);
-  const current = { ...editorDraft(), title: elements.entryTitle.value, content: elements.entryContent.value };
+  const current = { ...editorDraft(), title: elements.entryTitle.value, mood: elements.entryMood.value, tags: normalizeTags(elements.entryTags.value), content: elements.entryContent.value };
   if (draftHasContent(current)) saveDraft();
   renderDraftLibrary();
   openWorkspaceDialog(elements.draftLibraryDialog, elements.draftLibraryList.querySelector('.draft-library-item'));
@@ -912,6 +1187,8 @@ function pasteDraftIntoEditor(storageKey) {
   localStorage.removeItem(storageKey);
   state.pastedDraft = saved.draft;
   elements.entryTitle.value = saved.draft.title;
+  elements.entryMood.value = normalizeMood(saved.draft.mood);
+  elements.entryTags.value = entryTagsLabel(saved.draft.tags);
   elements.entryContent.value = saved.draft.content;
   renderDraftAttachments(saved.draft.attachments);
   renderEditorAiSuggestion(saved.draft);
@@ -927,10 +1204,14 @@ function saveDraft() {
   const previous = editorDraft();
   const content = elements.entryContent.value;
   const title = elements.entryTitle.value;
+  const mood = normalizeMood(elements.entryMood.value);
+  const tags = normalizeTags(elements.entryTags.value);
   const isSuggestionStale = previous.aiSuggestion && previous.aiOriginal !== content;
   const draft = {
     ...previous,
     title,
+    tags,
+    mood,
     content,
     aiSuggestion: isSuggestionStale ? '' : previous.aiSuggestion,
     aiOriginal: isSuggestionStale ? '' : previous.aiOriginal,
@@ -954,26 +1235,36 @@ function attachmentDataUrlIsSafe(value, type) {
   return Boolean(match && match[1].toLowerCase() === String(type || '').toLowerCase() && isAllowedAttachmentMime(match[1]));
 }
 
+function normalizeStoragePath(value) {
+  const path = String(value || '').trim();
+  const parts = path.split('/');
+  if (parts.length !== 4 || !parts.slice(0, 3).every(isUuid) || !/^[a-z0-9][a-z0-9._-]{0,140}$/i.test(parts[3])) return '';
+  return path;
+}
+
 function normalizeAttachment(value) {
   if (!value || typeof value !== 'object' || !isUuid(value.id)) return null;
   const type = String(value.type || '').toLowerCase();
   const size = Number(value.size);
-  if (!isAllowedAttachmentMime(type) || !Number.isSafeInteger(size) || size < 0 || size > MAX_ATTACHMENT_BYTES) return null;
-  if (!attachmentDataUrlIsSafe(value.dataUrl, type)) return null;
+  const dataUrl = attachmentDataUrlIsSafe(value.dataUrl, type) ? value.dataUrl : '';
+  const storagePath = normalizeStoragePath(value.storagePath);
+  if (!isAllowedAttachmentMime(type) || !Number.isSafeInteger(size) || size < 0 || size > MAX_ATTACHMENT_BYTES || (!dataUrl && !storagePath)) return null;
   return {
     id: value.id,
     name: attachmentFileName(value.name),
     type,
     size,
-    dataUrl: value.dataUrl,
+    ...(dataUrl ? { dataUrl } : {}),
+    ...(storagePath ? { storagePath } : {}),
   };
 }
 
 function normalizeAttachments(value) {
-  if (!Array.isArray(value)) return [];
+  const candidates = Array.isArray(value) ? value : attachmentPayload(value).files;
+  if (!Array.isArray(candidates)) return [];
   const ids = new Set();
   let total = 0;
-  return value.reduce((attachments, candidate) => {
+  return candidates.reduce((attachments, candidate) => {
     const attachment = normalizeAttachment(candidate);
     if (!attachment || ids.has(attachment.id) || attachments.length >= MAX_ATTACHMENT_COUNT) return attachments;
     if (total + attachment.size > MAX_ATTACHMENTS_TOTAL_BYTES) return attachments;
@@ -1057,25 +1348,41 @@ function removeDraftAttachment(id) {
   renderDraftAttachments(attachments);
 }
 
-function downloadAttachment(attachment) {
-  if (!attachmentDataUrlIsSafe(attachment?.dataUrl, attachment?.type)) return;
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = attachment.dataUrl;
-  link.download = attachmentFileName(attachment.name);
+  link.href = url;
+  link.download = attachmentFileName(fileName);
   document.body.append(link);
   link.click();
   link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function downloadAttachment(attachment) {
+  if (attachmentDataUrlIsSafe(attachment?.dataUrl, attachment?.type)) {
+    const response = await fetch(attachment.dataUrl);
+    downloadBlob(await response.blob(), attachment.name);
+    return;
+  }
+  if (!attachment?.storagePath) return;
+  try {
+    const blob = await cloudBlobRequest(`/storage/v1/object/${JOURNAL_ATTACHMENT_BUCKET}/${attachment.storagePath}`);
+    downloadBlob(blob, attachment.name);
+  } catch {
+    showToast('附件暂时无法下载，请先登录同步账号后重试');
+  }
 }
 
 function attachmentVisual(attachment) {
-  const visual = isImageAttachment(attachment) ? document.createElement('img') : document.createElement('span');
+  const visual = isImageAttachment(attachment) && attachmentDataUrlIsSafe(attachment.dataUrl, attachment.type) ? document.createElement('img') : document.createElement('span');
   if (visual instanceof HTMLImageElement) {
     visual.className = 'attachment-preview-image';
     visual.src = attachment.dataUrl;
     visual.alt = attachment.name;
   } else {
     visual.className = 'attachment-file-mark';
-    visual.textContent = attachment.type === 'application/pdf' ? 'PDF' : '附件';
+    visual.textContent = isImageAttachment(attachment) ? '图片' : (attachment.type === 'application/pdf' ? 'PDF' : '附件');
   }
   return visual;
 }
@@ -1174,6 +1481,7 @@ function saveAutomaticBackup() {
 
 
 function render() {
+  refreshJournalTagOptions();
   renderToday();
   renderCalendar();
   renderWritingRhythm();
@@ -1202,6 +1510,8 @@ function renderToday() {
   state.pastedDraft = null;
   const draft = loadDraft();
   elements.entryTitle.value = draft.title;
+  elements.entryMood.value = normalizeMood(draft.mood);
+  elements.entryTags.value = entryTagsLabel(draft.tags);
   elements.entryContent.value = draft.content;
   renderEditorAiSuggestion(draft);
   renderDraftAttachments(draft.attachments);
@@ -1212,9 +1522,25 @@ function renderToday() {
 function renderEditorAiSuggestion(draft) {
   const hasSuggestion = Boolean(draft.aiSuggestion && draft.aiOriginal === draft.content);
   elements.editorAiResult.hidden = !hasSuggestion;
-  if (hasSuggestion) elements.editorAiContent.textContent = draft.aiSuggestion;
+  elements.aiSuggestionParagraphs.replaceChildren();
+  if (!hasSuggestion) return;
+  elements.editorAiOriginal.textContent = draft.aiOriginal;
+  elements.editorAiContent.textContent = draft.aiSuggestion;
+  draft.aiSuggestion.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean).forEach((paragraph, index) => {
+    const item = document.createElement('div');
+    item.className = 'ai-suggestion-paragraph';
+    const copy = document.createElement('p');
+    copy.textContent = paragraph;
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'quiet-button';
+    use.dataset.suijianAiParagraph = String(index);
+    use.textContent = `采用第 ${index + 1} 段`;
+    use.addEventListener('click', () => applyAiSuggestionParagraph(index));
+    item.append(copy, use);
+    elements.aiSuggestionParagraphs.append(item);
+  });
 }
-
 function renderEntries() {
   const entries = entriesForDate(state.activeDate);
   elements.entryList.replaceChildren();
@@ -1230,6 +1556,7 @@ function renderEntries() {
     const fragment = elements.entryTemplate.content.cloneNode(true);
     fragment.querySelector('.entry-time').textContent = timeFormatter.format(new Date(entry.createdAt));
     fragment.querySelector('.entry-card-title').textContent = entry.title || '未命名片段';
+    renderEntryMetadata(fragment.querySelector('.entry-card-meta'), entry);
     fragment.querySelector('.entry-content').textContent = entry.content;
     const attachmentList = renderEntryAttachments(entry.attachments);
     if (attachmentList) fragment.querySelector('.entry-content').after(attachmentList);
@@ -1283,7 +1610,6 @@ function renderCalendar() {
     const button = document.createElement('button');
     button.className = 'calendar-day';
     button.type = 'button';
-    button.setAttribute('role', 'gridcell');
     button.setAttribute('aria-label', `${key}${count ? `，${count} 条记录` : ''}`);
     if (current.getMonth() !== month) button.classList.add('other-month');
     if (key === (state.archiveJumpDate || state.activeDate)) button.classList.add('active-date');
@@ -1348,9 +1674,12 @@ function renderCalendarArchive() {
       meta.textContent = timeFormatter.format(new Date(entry.createdAt));
       const title = document.createElement('h3');
       title.textContent = entry.title || '未命名片段';
+      const metadata = document.createElement('div');
+      metadata.className = 'entry-metadata archive-entry-meta';
+      renderEntryMetadata(metadata, entry);
       const content = document.createElement('p');
       content.textContent = entry.content;
-      article.append(meta, title, content);
+      article.append(meta, title, metadata, content);
       const attachmentList = renderEntryAttachments(entry.attachments);
       if (attachmentList) article.append(attachmentList);
       group.append(article);
@@ -1423,20 +1752,62 @@ function renderPeriodSummaries() {
   });
 }
 
-function renderSearchResults() {
+function searchEntries() {
   const query = elements.searchInput.value.trim().toLocaleLowerCase();
+  const start = elements.searchStartDate.value;
+  const end = elements.searchEndDate.value;
+  const tag = elements.searchTagFilter.value.trim().toLocaleLowerCase();
+  const mood = normalizeMood(elements.searchMoodFilter.value);
+  const requireAttachment = elements.searchHasAttachment.checked;
+  return state.data.entries
+    .filter((entry) => !entry.deletedAt)
+    .filter((entry) => !start || entry.date >= start)
+    .filter((entry) => !end || entry.date <= end)
+    .filter((entry) => !tag || normalizeTags(entry.tags).some((item) => item.toLocaleLowerCase().includes(tag)))
+    .filter((entry) => !mood || normalizeMood(entry.mood) === mood)
+    .filter((entry) => !requireAttachment || normalizeAttachments(entry.attachments).length > 0)
+    .filter((entry) => {
+      if (!query) return true;
+      const haystack = `${entry.title} ${entry.content} ${entry.originalContent ?? ''} ${entryTagsLabel(entry.tags)} ${entry.mood || ''} ${normalizeAttachments(entry.attachments).map((attachment) => attachment.name).join(' ')}`.toLocaleLowerCase();
+      return haystack.includes(query);
+    })
+    .sort((a, b) => b.date.localeCompare(a.date) || new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function appendHighlightedText(target, text, query) {
+  const source = String(text || '');
+  const needle = String(query || '').trim();
+  if (!needle) {
+    target.textContent = source;
+    return;
+  }
+  const lower = source.toLocaleLowerCase();
+  const lowerNeedle = needle.toLocaleLowerCase();
+  let cursor = 0;
+  let index = lower.indexOf(lowerNeedle, cursor);
+  while (index !== -1) {
+    target.append(document.createTextNode(source.slice(cursor, index)));
+    const mark = document.createElement('mark');
+    mark.textContent = source.slice(index, index + needle.length);
+    target.append(mark);
+    cursor = index + needle.length;
+    index = lower.indexOf(lowerNeedle, cursor);
+  }
+  target.append(document.createTextNode(source.slice(cursor)));
+}
+
+function renderSearchResults() {
+  const query = elements.searchInput.value.trim();
+  const filtering = Boolean(query || elements.searchStartDate.value || elements.searchEndDate.value || elements.searchTagFilter.value.trim() || elements.searchMoodFilter.value || elements.searchHasAttachment.checked);
   elements.searchResults.replaceChildren();
-  if (!query) {
+  if (!filtering) {
     const help = document.createElement('p');
     help.className = 'summary-empty';
-    help.textContent = '输入一个词，翻找写过的片段。';
+    help.textContent = '输入关键词，或按日期、标签、心情和附件筛选。';
     elements.searchResults.append(help);
     return;
   }
-  const matches = state.data.entries
-    .filter((entry) => !entry.deletedAt)
-    .filter((entry) => `${entry.title} ${entry.content} ${entry.originalContent ?? ''} ${normalizeAttachments(entry.attachments).map((attachment) => attachment.name).join(' ')}`.toLocaleLowerCase().includes(query))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const matches = searchEntries();
   if (!matches.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -1448,7 +1819,17 @@ function renderSearchResults() {
     const result = document.createElement('button');
     result.className = 'search-result';
     result.type = 'button';
-    result.innerHTML = `<div class="search-result-date">${entry.date}</div><h3>${escapeHtml(entry.title || '未命名片段')}</h3><p>${escapeHtml(entry.content)}</p>`;
+    const date = document.createElement('div');
+    date.className = 'search-result-date';
+    date.textContent = entry.date;
+    const title = document.createElement('h3');
+    appendHighlightedText(title, entry.title || '未命名片段', query);
+    const metadata = document.createElement('div');
+    metadata.className = 'entry-metadata search-result-meta';
+    renderEntryMetadata(metadata, entry);
+    const copy = document.createElement('p');
+    appendHighlightedText(copy, entry.content, query);
+    result.append(date, title, metadata, copy);
     result.addEventListener('click', () => {
       state.activeDate = entry.date;
       state.archiveJumpDate = entry.date;
@@ -1461,7 +1842,6 @@ function renderSearchResults() {
     elements.searchResults.append(result);
   });
 }
-
 function updateActiveView() {
   elements.views.forEach((view) => view.classList.toggle('active', view.id === `${state.view}-view`));
   elements.navLinks.forEach((link) => link.classList.toggle('active', link.dataset.view === state.view));
@@ -1490,6 +1870,8 @@ function saveNewEntry() {
     id: crypto.randomUUID(),
     date: state.activeDate,
     title,
+    tags: normalizeTags(draft.tags),
+    mood: normalizeMood(draft.mood),
     content,
     originalContent: draft.originalContent || '',
     attachments: normalizeAttachments(draft.attachments),
@@ -1505,8 +1887,11 @@ function saveNewEntry() {
   state.pastedDraft = null;
   updateDraftLibraryButton();
   elements.entryTitle.value = '';
+  elements.entryMood.value = '';
+  elements.entryTags.value = '';
   elements.entryContent.value = '';
   render();
+  void applyReminderSchedule(state.reminder.settings).catch(() => undefined);
   showToast('记录已保存');
 }
 
@@ -1773,7 +2158,7 @@ async function organizeDraftWithAI() {
   try {
     const suggestion = await requestAI(buildOrganizeRequest(getAiConfig(), content));
     const previous = editorDraft();
-    const draft = { ...previous, title: elements.entryTitle.value, content, aiOriginal: content, aiSuggestion: suggestion };
+    const draft = { ...previous, title: elements.entryTitle.value, tags: normalizeTags(elements.entryTags.value), mood: normalizeMood(elements.entryMood.value), content, aiOriginal: content, aiSuggestion: suggestion };
     saveDraftObject(draft, 'AI 建议已生成，等待确认');
     renderEditorAiSuggestion(draft);
     showToast('AI 建议已生成，原文仍未改变');
@@ -1785,6 +2170,23 @@ async function organizeDraftWithAI() {
   }
 }
 
+function applyAiSuggestionParagraph(index) {
+  const draft = editorDraft();
+  if (!draft.aiSuggestion || draft.aiOriginal !== elements.entryContent.value) {
+    showToast('原文已改变，请重新整理后再采用');
+    return;
+  }
+  const suggested = draft.aiSuggestion.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
+  const original = elements.entryContent.value.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
+  if (!suggested[index]) return;
+  if (original[index]) original[index] = suggested[index];
+  else original.push(suggested[index]);
+  const content = original.join('\n\n');
+  elements.entryContent.value = content;
+  saveDraftObject({ ...draft, content, aiSuggestion: '', aiOriginal: '', originalContent: draft.originalContent || draft.aiOriginal }, `已采用第 ${index + 1} 段建议`);
+  renderEditorAiSuggestion({});
+  showToast(`已采用第 ${index + 1} 段建议`);
+}
 function applyAiSuggestion() {
   const draft = editorDraft();
   if (!draft.aiSuggestion || draft.aiOriginal !== elements.entryContent.value) {
@@ -1888,18 +2290,188 @@ async function summarizePeriod() {
 }
 
 function exportData() {
-  const payload = { app: '岁笺 Calendar Journal', version: 3, exportedAt: new Date().toISOString(), data: state.data };
+  const payload = { app: '岁笺 Calendar Journal', version: 4, exportedAt: new Date().toISOString(), data: state.data };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `suijian-backup-${localDateKey()}.json`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `suijian-backup-${localDateKey()}.json`);
   showToast('完整备份已导出');
 }
+
+function journalMarkdown() {
+  const lines = ['# 岁笺日记归档', '', `导出时间：${new Date().toLocaleString('zh-CN')}`, ''];
+  calendarArchiveEntries().slice().reverse().forEach((entry) => {
+    lines.push(`## ${entry.date}${entry.title ? ` · ${entry.title}` : ''}`, '');
+    const metadata = [];
+    if (entry.mood) metadata.push(`心情：${entry.mood}`);
+    if (normalizeTags(entry.tags).length) metadata.push(`标签：${normalizeTags(entry.tags).map((tag) => `#${tag}`).join(' ')}`);
+    if (metadata.length) lines.push(metadata.join(' · '), '');
+    lines.push(entry.content || '', '');
+    const attachments = normalizeAttachments(entry.attachments);
+    if (attachments.length) lines.push(`附件：${attachments.map((item) => item.name).join('、')}`, '');
+  });
+  return lines.join('\n');
+}
+
+function exportMarkdown() {
+  downloadBlob(new Blob([journalMarkdown()], { type: 'text/markdown;charset=utf-8' }), `suijian-journal-${localDateKey()}.md`);
+  showToast('Markdown 日记归档已导出');
+}
+
+let crcTable;
+function crc32(bytes) {
+  if (!crcTable) {
+    crcTable = Array.from({ length: 256 }, (_, index) => {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+      return value >>> 0;
+    });
+  }
+  let value = 0xffffffff;
+  bytes.forEach((byte) => { value = (value >>> 8) ^ crcTable[(value ^ byte) & 0xff]; });
+  return (value ^ 0xffffffff) >>> 0;
+}
+
+function zipUint16(value) { return new Uint8Array([value & 0xff, (value >>> 8) & 0xff]); }
+function zipUint32(value) { return new Uint8Array([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]); }
+function concatZipBytes(parts) {
+  const length = parts.reduce((total, part) => total + part.length, 0);
+  const out = new Uint8Array(length);
+  let cursor = 0;
+  parts.forEach((part) => { out.set(part, cursor); cursor += part.length; });
+  return out;
+}
+
+function buildStoredZip(files) {
+  const encoder = new TextEncoder();
+  const local = [];
+  const central = [];
+  let offset = 0;
+  files.forEach(({ name, bytes }) => {
+    const nameBytes = encoder.encode(name);
+    const checksum = crc32(bytes);
+    const flags = 0x0800;
+    const localHeader = concatZipBytes([zipUint32(0x04034b50), zipUint16(20), zipUint16(flags), zipUint16(0), zipUint16(0), zipUint16(0), zipUint32(checksum), zipUint32(bytes.length), zipUint32(bytes.length), zipUint16(nameBytes.length), zipUint16(0), nameBytes, bytes]);
+    local.push(localHeader);
+    central.push(concatZipBytes([zipUint32(0x02014b50), zipUint16(20), zipUint16(20), zipUint16(flags), zipUint16(0), zipUint16(0), zipUint16(0), zipUint32(checksum), zipUint32(bytes.length), zipUint32(bytes.length), zipUint16(nameBytes.length), zipUint16(0), zipUint16(0), zipUint16(0), zipUint16(0), zipUint32(0), zipUint32(offset), nameBytes]));
+    offset += localHeader.length;
+  });
+  const centralBytes = concatZipBytes(central);
+  const end = concatZipBytes([zipUint32(0x06054b50), zipUint16(0), zipUint16(0), zipUint16(files.length), zipUint16(files.length), zipUint32(centralBytes.length), zipUint32(offset), zipUint16(0)]);
+  return concatZipBytes([...local, centralBytes, end]);
+}
+
+async function exportZipBackup() {
+  setBusy(elements.backupExportZip, true, '正在打包…');
+  try {
+    const encoder = new TextEncoder();
+    const payload = { app: '岁笺 Calendar Journal', version: 4, exportedAt: new Date().toISOString(), data: state.data };
+    const files = [
+      { name: '日记归档.md', bytes: encoder.encode(journalMarkdown()) },
+      { name: 'suijian-backup.json', bytes: encoder.encode(JSON.stringify(payload, null, 2)) },
+    ];
+    for (const entry of calendarArchiveEntries()) {
+      for (const attachment of normalizeAttachments(entry.attachments)) {
+        try {
+          let blob;
+          if (attachmentDataUrlIsSafe(attachment.dataUrl, attachment.type)) blob = await (await fetch(attachment.dataUrl)).blob();
+          else if (attachment.storagePath && state.cloud.session) blob = await cloudBlobRequest(`/storage/v1/object/${JOURNAL_ATTACHMENT_BUCKET}/${attachment.storagePath}`);
+          if (!blob) continue;
+          const safeName = attachmentFileName(attachment.name).replace(/[^\w.\-\u4e00-\u9fff]/g, '_');
+          files.push({ name: `attachments/${entry.date}-${attachment.id.slice(0, 8)}-${safeName}`, bytes: new Uint8Array(await blob.arrayBuffer()) });
+        } catch { /* metadata remains in JSON even when a remote object is offline */ }
+      }
+    }
+    downloadBlob(new Blob([buildStoredZip(files)], { type: 'application/zip' }), `suijian-backup-${localDateKey()}.zip`);
+    showToast('ZIP 备份已导出');
+  } finally {
+    setBusy(elements.backupExportZip, false);
+  }
+}
+
+function automaticBackupRequest(mode, action) {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) { resolve(null); return; }
+    const request = indexedDB.open(AUTO_BACKUP_DB, 1);
+    request.addEventListener('upgradeneeded', () => {
+      if (!request.result.objectStoreNames.contains(AUTO_BACKUP_STORE)) request.result.createObjectStore(AUTO_BACKUP_STORE, { keyPath: 'id' });
+    });
+    request.addEventListener('error', () => reject(request.error || new Error('backup-db')));
+    request.addEventListener('success', () => {
+      const database = request.result;
+      const transaction = database.transaction(AUTO_BACKUP_STORE, mode);
+      const result = action(transaction.objectStore(AUTO_BACKUP_STORE));
+      transaction.addEventListener('complete', () => { database.close(); resolve(result?.result ?? result ?? null); });
+      transaction.addEventListener('error', () => { database.close(); reject(transaction.error || new Error('backup-db')); });
+      transaction.addEventListener('abort', () => { database.close(); reject(transaction.error || new Error('backup-db')); });
+    });
+  });
+}
+
+async function listAutomaticBackups() {
+  try {
+    const value = await automaticBackupRequest('readonly', (store) => store.getAll());
+    return Array.isArray(value) ? value.sort((first, second) => String(second.backedUpAt).localeCompare(String(first.backedUpAt))) : [];
+  } catch { return []; }
+}
+
+async function restoreAutomaticBackup(id) {
+  const snapshots = await listAutomaticBackups();
+  const snapshot = snapshots.find((item) => item.id === id);
+  if (!snapshot?.data || !window.confirm(`恢复 ${new Date(snapshot.backedUpAt).toLocaleString('zh-CN')} 的备份？当前内容会先另存为自动备份。`)) return;
+  await saveAutomaticBackup();
+  const next = snapshot.data;
+  state.data = {
+    entries: Array.isArray(next.entries) ? next.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry.attachments), tags: normalizeTags(entry.tags), mood: normalizeMood(entry.mood) })) : [],
+    summaries: next.summaries && typeof next.summaries === 'object' ? next.summaries : {},
+    periodSummaries: Array.isArray(next.periodSummaries) ? next.periodSummaries : [],
+    tasks: Array.isArray(next.tasks) ? next.tasks.map(normalizeJournalTask).filter(Boolean) : [],
+    cloudSync: normalizeCloudMeta(next.cloudSync),
+  };
+  markAllCloudDirty();
+  if (!persistData()) return;
+  render();
+  await renderBackupSnapshots();
+  showToast('已恢复所选自动备份');
+}
+
+async function renderBackupSnapshots() {
+  const snapshots = await listAutomaticBackups();
+  elements.backupSnapshotList.replaceChildren();
+  elements.backupStatus.textContent = snapshots.length ? `保留 ${snapshots.length} 份` : '暂无快照';
+  if (!snapshots.length) {
+    const empty = document.createElement('p');
+    empty.className = 'review-empty';
+    empty.textContent = '保存一条日记后，会自动生成本机恢复快照。';
+    elements.backupSnapshotList.append(empty);
+    return;
+  }
+  snapshots.forEach((snapshot) => {
+    const item = document.createElement('article');
+    item.className = 'backup-snapshot';
+    const copy = document.createElement('div');
+    const time = document.createElement('strong');
+    time.textContent = new Date(snapshot.backedUpAt).toLocaleString('zh-CN');
+    const detail = document.createElement('span');
+    detail.textContent = `${Array.isArray(snapshot.data?.entries) ? snapshot.data.entries.filter((entry) => !entry.deletedAt).length : 0} 条日记`;
+    copy.append(time, detail);
+    const restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'quiet-button';
+    restore.textContent = '恢复这份';
+    restore.addEventListener('click', () => void restoreAutomaticBackup(snapshot.id));
+    item.append(copy, restore);
+    elements.backupSnapshotList.append(item);
+  });
+}
+
+function openBackupDialog() {
+  void renderBackupSnapshots();
+  openWorkspaceDialog(elements.backupDialog, elements.backupExportZip);
+}
+
+function closeBackupDialog() {
+  closeWorkspaceDialog(elements.backupDialog);
+}
+
 
 function isDateKey(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00`));
@@ -1924,6 +2496,8 @@ function normalizeImportedEntry(entry) {
     content: entry.content,
     originalContent: entry.originalContent || '',
     attachments: normalizeAttachments(entry.attachments),
+    tags: normalizeTags(entry.tags),
+    mood: normalizeMood(entry.mood),
     createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
     updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : new Date().toISOString(),
     ...(typeof entry.deletedAt === 'string' ? { deletedAt: entry.deletedAt } : {}),
@@ -1961,6 +2535,8 @@ async function importData(file) {
       .filter(([date, summary]) => isDateKey(date) && validText(typeof summary === 'string' ? summary : summary?.content, MAX_SUMMARY_CHARS))
       .map(([date, summary]) => [date, typeof summary === 'string' ? { content: summary } : summary]);
     const newSummaries = Object.fromEntries(incomingSummaries.filter(([date]) => !state.data.summaries[date]));
+    const taskIds = new Set(state.data.tasks.map((task) => task.id));
+    const newTasks = Array.isArray(incoming.tasks) ? incoming.tasks.map(normalizeJournalTask).filter((task) => task && !taskIds.has(task.id)) : [];
     const periodIds = new Set(state.data.periodSummaries.map((summary) => summary.id));
     const newPeriodSummaries = Array.isArray(incoming.periodSummaries)
       ? incoming.periodSummaries.map(normalizeImportedPeriodSummary).filter((summary) => summary && !periodIds.has(summary.id))
@@ -1969,9 +2545,11 @@ async function importData(file) {
     state.data.entries.push(...newEntries);
     state.data.summaries = { ...state.data.summaries, ...newSummaries };
     state.data.periodSummaries.push(...newPeriodSummaries);
+    state.data.tasks.push(...newTasks);
     newEntries.forEach((entry) => markCloudDirty('entries', entry.id));
     Object.keys(newSummaries).forEach((date) => markCloudDirty('dailySummaries', date));
     newPeriodSummaries.forEach((summary) => markCloudDirty('periodSummaries', summary.id));
+    newTasks.forEach((task) => markCloudDirty('tasks', task.id));
     if (!persistData()) {
       state.data = previous;
       throw new Error('storage');
@@ -2039,7 +2617,7 @@ function clearCloudDirty(kind, ids) {
 
 function hasCloudChanges() {
   const meta = state.data.cloudSync ?? emptyCloudMeta();
-  return Object.values(meta.dirty).some((values) => values.length > 0);
+  return Object.entries(meta.dirty).some(([kind, values]) => values.length > 0 && (kind !== 'tasks' || state.cloud.tasksSupported !== false));
 }
 
 function readCloudConfig() {
@@ -2348,6 +2926,21 @@ async function activeCloudSession() {
   return refreshCloudSession();
 }
 
+async function cloudBlobRequest(path, options = {}, retry = true) {
+  const config = readCloudConfig();
+  const session = await activeCloudSession();
+  const response = await fetch(cloudUrl(path), {
+    ...options,
+    headers: { apikey: config.publishableKey, Authorization: `Bearer ${session.accessToken}`, ...(options.headers || {}) },
+  });
+  if (response.status === 401 && retry) {
+    await refreshCloudSession();
+    return cloudBlobRequest(path, options, false);
+  }
+  if (!response.ok) throw new Error(`附件服务返回 ${response.status}`);
+  return response.blob();
+}
+
 async function cloudRequest(path, options = {}, retry = true) {
   const config = readCloudConfig();
   const session = await activeCloudSession();
@@ -2382,17 +2975,33 @@ function incomingWins(local, remote) {
 }
 
 function remoteEntryToLocal(entry) {
+  const payload = attachmentPayload(entry.attachments);
   return {
     id: entry.id,
     date: entry.entry_date,
     title: entry.title || '',
     content: entry.content || '',
     originalContent: entry.original_content || '',
-    attachments: normalizeAttachments(entry.attachments),
+    attachments: normalizeAttachments(payload.files),
+    tags: normalizeTags(payload.tags),
+    mood: normalizeMood(payload.mood),
     createdAt: entry.created_at,
     updatedAt: entry.updated_at,
     deletedAt: entry.deleted_at || undefined,
   };
+}
+
+function remoteTaskToLocal(task) {
+  return normalizeJournalTask({
+    id: task.id,
+    entryId: task.entry_id,
+    sourceKey: task.source_key,
+    text: task.content,
+    completed: task.completed,
+    createdAt: task.created_at,
+    updatedAt: task.updated_at,
+    deletedAt: task.deleted_at || undefined,
+  });
 }
 
 function remoteSummaryToLocal(summary) {
@@ -2420,7 +3029,7 @@ function remotePeriodToLocal(summary) {
   };
 }
 
-function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = [] }) {
+function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = [], tasks = [] }) {
   const entryMap = new Map(state.data.entries.map((entry) => [entry.id, entry]));
   entries.map(remoteEntryToLocal).forEach((remote) => {
     const local = entryMap.get(remote.id);
@@ -2440,6 +3049,13 @@ function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = 
     if (!local || incomingWins(local, remote)) periodMap.set(remote.id, remote);
   });
   state.data.periodSummaries = [...periodMap.values()];
+
+  const taskMap = new Map(state.data.tasks.map((task) => [task.id, task]));
+  tasks.map(remoteTaskToLocal).filter(Boolean).forEach((remote) => {
+    const local = taskMap.get(remote.id);
+    if (!local || incomingWins(local, remote)) taskMap.set(remote.id, remote);
+  });
+  state.data.tasks = [...taskMap.values()];
 }
 
 function ensureCloudMetadata(item, now) {
@@ -2464,6 +3080,10 @@ function markAllCloudDirty() {
     ensureCloudMetadata(summary, now);
     markCloudDirty('periodSummaries', summary.id);
   });
+  state.data.tasks.forEach((task) => {
+    ensureCloudMetadata(task, now);
+    markCloudDirty('tasks', task.id);
+  });
 }
 
 async function pullCloudData() {
@@ -2475,7 +3095,14 @@ async function pullCloudData() {
     cloudRequest(`/rest/v1/daily_summaries?select=${encodeURIComponent(summaryColumns)}&order=updated_at.desc`),
     cloudRequest(`/rest/v1/period_summaries?select=${encodeURIComponent(periodColumns)}&order=updated_at.desc`),
   ]);
-  mergeRemoteData({ entries, dailySummaries, periodSummaries });
+  let tasks = [];
+  try {
+    tasks = await cloudRequest('/rest/v1/journal_tasks?select=id,entry_id,source_key,content,completed,created_at,updated_at,deleted_at&order=updated_at.desc');
+    state.cloud.tasksSupported = true;
+  } catch {
+    state.cloud.tasksSupported = false;
+  }
+  mergeRemoteData({ entries, dailySummaries, periodSummaries, tasks });
 }
 
 function entryToCloud(entry, userId) {
@@ -2486,11 +3113,53 @@ function entryToCloud(entry, userId) {
     title: entry.title || '',
     content: entry.content || '',
     original_content: entry.originalContent || '',
-    attachments: normalizeAttachments(entry.attachments),
+    attachments: cloudAttachmentPayload(entry),
     created_at: entry.createdAt,
     updated_at: entry.updatedAt,
     deleted_at: entry.deletedAt || null,
   };
+}
+
+function taskToCloud(task, userId) {
+  return { id: task.id, user_id: userId, entry_id: task.entryId, source_key: task.sourceKey, content: task.text, completed: Boolean(task.completed), created_at: task.createdAt, updated_at: task.updatedAt, deleted_at: task.deletedAt || null };
+}
+
+function storageObjectName(entry, attachment, userId) {
+  const extension = attachmentFileName(attachment.name).split('.').pop().replace(/[^a-z0-9]/gi, '').slice(0, 12);
+  return `${userId}/${entry.id}/${attachment.id}/${attachment.id}${extension ? `.${extension.toLowerCase()}` : ''}`;
+}
+
+async function uploadAttachmentToCloud(entry, attachment, userId) {
+  if (!attachmentDataUrlIsSafe(attachment.dataUrl, attachment.type)) return attachment;
+  const blob = await (await fetch(attachment.dataUrl)).blob();
+  const storagePath = storageObjectName(entry, attachment, userId);
+  const config = readCloudConfig();
+  const session = await activeCloudSession();
+  const response = await fetch(cloudUrl(`/storage/v1/object/${JOURNAL_ATTACHMENT_BUCKET}/${storagePath}`), {
+    method: 'POST',
+    headers: { apikey: config.publishableKey, Authorization: `Bearer ${session.accessToken}`, 'Content-Type': attachment.type, 'x-upsert': 'false' },
+    body: blob,
+  });
+  if (!response.ok && response.status !== 409) throw new Error(`附件上传失败：${response.status}`);
+  return { id: attachment.id, name: attachment.name, type: attachment.type, size: attachment.size, storagePath };
+}
+
+async function promoteEntryAttachmentsToCloud(entry, userId) {
+  const attachments = normalizeAttachments(entry.attachments);
+  if (!attachments.some((attachment) => attachment.dataUrl && !attachment.storagePath)) return false;
+  const promoted = [];
+  let changed = false;
+  for (const attachment of attachments) {
+    try {
+      const next = attachment.storagePath ? attachment : await uploadAttachmentToCloud(entry, attachment, userId);
+      promoted.push(next);
+      changed ||= next.storagePath && next.storagePath !== attachment.storagePath;
+    } catch {
+      promoted.push(attachment);
+    }
+  }
+  if (changed) entry.attachments = promoted;
+  return changed;
 }
 
 function summaryToCloud(date, summary, userId) {
@@ -2525,6 +3194,7 @@ async function pushCloudChanges() {
   const entryIds = [...cloudDirty('entries')];
   const entries = entryIds.map((id) => state.data.entries.find((entry) => entry.id === id)).filter(Boolean);
   if (entries.length) {
+    await Promise.all(entries.map((entry) => promoteEntryAttachmentsToCloud(entry, userId)));
     const saved = await cloudRequest('/rest/v1/journal_entries?on_conflict=id', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
@@ -2557,6 +3227,25 @@ async function pushCloudChanges() {
     mergeRemoteData({ periodSummaries: saved || [] });
   }
   clearCloudDirty('periodSummaries', periodIds);
+
+  if (state.cloud.tasksSupported !== false) {
+    const taskIds = [...cloudDirty('tasks')];
+    const tasks = taskIds.map((id) => state.data.tasks.find((task) => task.id === id)).filter(Boolean);
+    if (tasks.length) {
+      try {
+        const saved = await cloudRequest('/rest/v1/journal_tasks?on_conflict=id', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
+          body: JSON.stringify(tasks.map((task) => taskToCloud(task, userId))),
+        });
+        state.cloud.tasksSupported = true;
+        mergeRemoteData({ tasks: saved || [] });
+        clearCloudDirty('tasks', taskIds);
+      } catch {
+        state.cloud.tasksSupported = false;
+      }
+    }
+  }
 }
 
 async function syncCloud({ quiet = false } = {}) {
@@ -2926,11 +3615,23 @@ function bindEvents() {
     state.reviewYear = Number(elements.reviewYear.value) || new Date().getFullYear();
     renderReview();
   });
+  elements.reviewRangeMode.addEventListener('change', () => {
+    state.reviewMode = ['week', 'month', 'year'].includes(elements.reviewRangeMode.value) ? elements.reviewRangeMode.value : 'year';
+    renderReview();
+  });
   elements.reminderForm.addEventListener('submit', (event) => {
     event.preventDefault();
     void saveReminderSettings();
   });
+  elements.reminderSnooze.addEventListener('click', () => void snoozeReminder());
+  elements.reminderSkipToday.addEventListener('click', () => void skipReminderToday());
   elements.searchPanelButton.addEventListener('click', openSearchDialog);
+  elements.backupPanelButton.addEventListener('click', openBackupDialog);
+  elements.closeBackupDialog.addEventListener('click', closeBackupDialog);
+  closeDialogOnBackdrop(elements.backupDialog, closeBackupDialog);
+  elements.backupExportJson.addEventListener('click', exportData);
+  elements.backupExportMarkdown.addEventListener('click', exportMarkdown);
+  elements.backupExportZip.addEventListener('click', () => void exportZipBackup());
   elements.cloudSyncButton.addEventListener('click', handleCloudSyncButton);
   elements.cloudAccountButton.addEventListener('click', openCloudAccountDialog);
   elements.closeAccountDialog.addEventListener('click', closeCloudAccountDialog);
@@ -2982,6 +3683,8 @@ function bindEvents() {
     render();
   });
   elements.entryTitle.addEventListener('input', scheduleDraftSave);
+  elements.entryMood.addEventListener('change', scheduleDraftSave);
+  elements.entryTags.addEventListener('input', scheduleDraftSave);
   elements.entryContent.addEventListener('input', scheduleDraftSave);
   elements.addAttachment.addEventListener('click', () => elements.attachmentInput.click());
   elements.attachmentInput.addEventListener('change', async (event) => {
@@ -3020,6 +3723,10 @@ function bindEvents() {
   elements.summarizePeriod.addEventListener('click', summarizePeriod);
   elements.editPeriodSummaryPrompt.addEventListener('click', () => openPromptEditor('summary'));
   elements.searchInput.addEventListener('input', renderSearchResults);
+  [elements.searchStartDate, elements.searchEndDate, elements.searchTagFilter, elements.searchMoodFilter, elements.searchHasAttachment].forEach((input) => input.addEventListener(input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input', renderSearchResults));
+  elements.clearSearchFilters.addEventListener('click', () => {
+    elements.searchInput.value = ''; elements.searchStartDate.value = ''; elements.searchEndDate.value = ''; elements.searchTagFilter.value = ''; elements.searchMoodFilter.value = ''; elements.searchHasAttachment.checked = false; renderSearchResults();
+  });
   elements.exportButton.addEventListener('click', exportData);
   elements.importInput.addEventListener('change', (event) => {
     const [file] = event.target.files;
@@ -3082,5 +3789,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260812-mobile-ota'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260812-journal-completion'));
 }

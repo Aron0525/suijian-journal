@@ -77,3 +77,22 @@ Android 已使用 Capacitor 原生壳打包，安装包内置 `dist-mobile/` 的
 - 回退构建改动：运行 `./rollback-android-apk.sh`。
 
 `npm run build:mobile` 会生成内置网页资源 `dist-mobile/`。移动端 AI 使用 Supabase Edge Function `ai-proxy`，代码在 `supabase/functions/ai-proxy/index.ts`，并要求先登录同步账号；本机 `127.0.0.1` 调试仍使用 `server.py`。
+
+## 本轮日记能力
+
+- **标签与心情**：每条日记可选一个心情、填写最多 8 个标签；会显示在日记档案、搜索结果和回顾中。
+- **筛选搜索**：可同时按关键词、开始/结束日期、标签、心情和“含图片/附件”筛选，关键词会高亮。
+- **回顾与待办**：回顾窗口支持本周、本月、本年；包含连续记录热力图、主要主题和情绪线索。正文中写 `待办：...` 或 `计划：...` 会被提取为可勾选的待办。
+- **附件云存储**：登录后，同步时会将已有的小附件迁移到私有 Supabase Storage 桶；日记表只保留附件引用，不再长期保存图片 Base64。旧附件在迁移前仍可正常同步。
+- **备份与恢复**：每次保存会保留 3 份本机自动快照；“备份”窗口可恢复快照，并可导出 JSON、Markdown 或含附件的 ZIP。
+- **提醒与 AI**：当天已经写过日记会跳过提醒，支持“稍后 1 小时”和“今天跳过”；AI 整理显示原文/建议稿，并可逐段采用或整篇采用。
+
+### 启用附件云存储和待办跨设备同步
+
+在 Supabase SQL Editor 执行一次 [`supabase/schema.sql`](./supabase/schema.sql)。该脚本会创建 `journal_tasks` 表、私有 `journal-attachments` Storage 桶及按账号隔离的访问规则。执行后，下一次登录同步会自动迁移新保存的附件；无需在前端填写额外密钥。
+
+## 仓库配置文档
+
+- 给 AI 的快速配置运行手册：[docs/AI_SETUP_GUIDE.md](docs/AI_SETUP_GUIDE.md)
+- 给普通使用者的配置指南：[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)
+- 不上传到 GitHub 的文件与外部配置记录：[docs/UPLOAD_EXCLUSIONS.md](docs/UPLOAD_EXCLUSIONS.md)

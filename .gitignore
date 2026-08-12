@@ -11,3 +11,14 @@ cloud-sync-*.png
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Credentials and signing material must remain outside the repository.
+.env
+.env.*
+!.env.example
+supabase/.env*
+*.jks
+*.keystore
+*.pem
+*.key
+android-signing.env

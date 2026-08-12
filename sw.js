@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v24';
-const RELEASE = '20260812-mobile-ota';
+const CACHE_NAME = 'suijian-pwa-v25';
+const RELEASE = '20260812-journal-completion';
 const ASSETS = [
   './',
   './index.html',

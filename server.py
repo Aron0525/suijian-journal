@@ -60,7 +60,7 @@ class JournalHandler(SimpleHTTPRequestHandler):
         self.send_header(
             'Content-Security-Policy',
             "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self'; "
-            "style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; "
+            "style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.supabase.co https://aron0525.github.io; "
             "worker-src 'self'",
         )
         self.send_header('X-Content-Type-Options', 'nosniff')
