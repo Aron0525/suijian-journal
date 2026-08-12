@@ -301,3 +301,36 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .ai-config-dialog form { padding: 22px; }
   .ai-consent-row .primary-button { width: 100%; }
 }
+
+.editor-heading-tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.editor-attachment-add { display: inline-grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid rgba(66,99,93,.48); border-radius: 50%; color: var(--ink); background: rgba(255,252,246,.8); transition: transform .2s, color .2s, border-color .2s, background .2s; }
+.editor-attachment-add:hover { border-color: var(--clay); color: var(--clay-deep); background: rgba(198,109,76,.09); transform: rotate(90deg); }
+.editor-attachment-add svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.draft-attachments { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 9px; margin-top: 16px; padding: 12px 0 2px; border-top: 1px dashed rgba(66,99,93,.24); }
+.draft-attachments[hidden] { display: none; }
+.attachment-preview { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; min-width: 0; padding: 7px; border: 1px solid rgba(66,99,93,.22); border-radius: 3px 12px 3px 3px; background: rgba(255,255,255,.48); }
+.attachment-open, .entry-attachment { display: flex; min-width: 0; padding: 0; color: inherit; text-align: left; }
+.attachment-open { align-items: center; gap: 8px; }
+.attachment-preview-image { display: block; flex: 0 0 auto; width: 38px; height: 38px; border-radius: 2px; object-fit: cover; background: rgba(23,63,58,.08); }
+.attachment-file-mark { display: grid; flex: 0 0 auto; place-items: center; width: 38px; height: 38px; border: 1px solid rgba(198,109,76,.3); border-radius: 2px; color: var(--clay-deep); background: rgba(198,109,76,.08); font-family: "DM Mono", monospace; font-size: 9px; }
+.attachment-detail, .entry-attachment-detail { display: grid; min-width: 0; gap: 3px; }
+.attachment-detail strong, .entry-attachment-detail strong { overflow: hidden; color: var(--ink); font-size: 11px; font-weight: 600; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-detail small, .entry-attachment-detail small { color: var(--ink-soft); font-family: "DM Mono", monospace; font-size: 9px; }
+.attachment-remove { align-self: start; width: 23px; height: 23px; padding: 0; border: 1px solid transparent; border-radius: 50%; color: var(--ink-soft); font-size: 17px; line-height: 1; }
+.attachment-remove:hover { border-color: rgba(198,109,76,.46); color: var(--clay-deep); background: rgba(198,109,76,.08); }
+.entry-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.entry-attachment { align-items: center; gap: 7px; max-width: min(100%, 240px); padding: 6px 8px; border: 1px solid rgba(66,99,93,.2); border-radius: 3px 10px 3px 3px; background: rgba(255,255,255,.45); transition: border-color .2s, background .2s; }
+.entry-attachment:hover { border-color: rgba(198,109,76,.52); background: rgba(198,109,76,.06); }
+.entry-attachment .attachment-preview-image, .entry-attachment .attachment-file-mark { width: 32px; height: 32px; }
+
+@media (max-width: 760px) {
+  .panel-heading { gap: 12px; }
+  .editor-heading-tools { gap: 7px; }
+  .draft-status { max-width: 170px; text-align: right; line-height: 1.5; }
+  .draft-attachments { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .editor-heading-tools { flex: 0 0 auto; margin-left: auto; }
+  .editor-heading-tools .draft-status { display: none; }
+}

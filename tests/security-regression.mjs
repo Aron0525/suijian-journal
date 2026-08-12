@@ -122,4 +122,21 @@ assert.match(packageJson, /"@capgo\/capacitor-updater"/);
 assert.match(manifest, /"start_url": "\.\/index\.htm"/);
 assert.match(manifest, /"scope": "\.\/"/);
 
+assert.match(index, /id="add-attachment"/);
+assert.match(index, /id="attachment-input"[^>]*multiple/);
+assert.match(index, /id="draft-attachments"/);
+assert.match(app, /const MAX_ATTACHMENT_COUNT = 4/);
+assert.match(app, /function normalizeAttachments\(value\)/);
+assert.match(app, /async function attachFiles\(files\)/);
+assert.match(app, /function renderDraftAttachments\(attachments\)/);
+assert.match(app, /function renderEntryAttachments\(attachments\)/);
+assert.match(app, /function scheduleAutomaticBackup\(\)/);
+assert.match(app, /indexedDB\.open\(AUTO_BACKUP_DB/);
+assert.match(app, /attachments: normalizeAttachments\(draft\.attachments\)/);
+assert.match(app, /const entryColumns = 'id,entry_date,title,content,original_content,attachments,created_at,updated_at,deleted_at'/);
+assert.match(app, /attachments: normalizeAttachments\(entry\.attachments\)/);
+assert.match(schema, /attachments jsonb not null default '\[\]'::jsonb/);
+assert.match(styles, /\.editor-attachment-add/);
+assert.match(styles, /\.attachment-preview/);
+
 console.log('JavaScript security regression checks passed');

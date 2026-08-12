@@ -63,12 +63,19 @@
                 <p class="eyebrow">快速记录</p>
                 <h2 id="editor-title">此刻想说什么？</h2>
               </div>
-              <span id="draft-status" class="draft-status">草稿随输入保存</span>
+              <div class="editor-heading-tools">
+                <span id="draft-status" class="draft-status">草稿随输入保存 · 自动备份</span>
+                <button id="add-attachment" class="editor-attachment-add" type="button" aria-label="添加图片或附件" title="添加图片或附件">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+                </button>
+                <input id="attachment-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,text/plain,text/markdown,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden />
+              </div>
             </div>
             <label class="sr-only" for="entry-title">记录标题</label>
             <input id="entry-title" class="entry-title" maxlength="80" placeholder="给这段记录取个名字（选填）" />
             <label class="sr-only" for="entry-content">日记内容</label>
             <textarea id="entry-content" rows="9" maxlength="10000" placeholder="不用组织语言，先把想到的写下来。"></textarea>
+            <div id="draft-attachments" class="draft-attachments" hidden aria-live="polite"></div>
             <section id="editor-ai-result" class="editor-ai-result" hidden aria-live="polite">
               <div class="ai-suggestion-head">
                 <span>AI 整理建议</span>

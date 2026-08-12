@@ -7,7 +7,23 @@ const CLOUD_ACTIVITY_KEY = 'suijian-cloud-activity-v1';
 const DEFAULT_SUPABASE_URL = 'https://ekotpodfgbkcykfcewmc.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_3TEgVHOwGufdfu_DHcvGLg_XD0tXovA';
 const MAX_PERIOD_INPUT_CHARS = 60000;
-const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+const MAX_IMPORT_BYTES = 12 * 1024 * 1024;
+const MAX_ATTACHMENT_COUNT = 4;
+const MAX_ATTACHMENT_BYTES = 1024 * 1024;
+const MAX_ATTACHMENTS_TOTAL_BYTES = Math.floor(2.25 * 1024 * 1024);
+const MAX_ATTACHMENT_DATA_URL_CHARS = Math.ceil(MAX_ATTACHMENT_BYTES * 1.38) + 128;
+const MAX_ATTACHMENT_NAME_CHARS = 120;
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf',
+  'text/plain', 'text/markdown', 'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+]);
+const AUTO_BACKUP_DB = 'suijian-auto-backups-v1';
+const AUTO_BACKUP_STORE = 'recovery-snapshots';
+const AUTO_BACKUP_SNAPSHOT_COUNT = 3;
+const AUTO_BACKUP_DELAY_MS = 800;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_CONTENT_CHARS = 10000;
 const MAX_SUMMARY_CHARS = 60000;
@@ -68,6 +84,7 @@ const state = {
   archiveJumpDate: '',
   cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0 },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
+  backup: { timer: 0 },
 };
 
 const elements = {
@@ -80,6 +97,9 @@ const elements = {
   entryContent: document.querySelector('#entry-content'),
   wordCount: document.querySelector('#word-count'),
   draftStatus: document.querySelector('#draft-status'),
+  addAttachment: document.querySelector('#add-attachment'),
+  attachmentInput: document.querySelector('#attachment-input'),
+  draftAttachments: document.querySelector('#draft-attachments'),
   clearDraft: document.querySelector('#clear-draft'),
   organizeDraft: document.querySelector('#organize-draft'),
   editOrganizePrompt: document.querySelector('#edit-organize-prompt'),
@@ -255,7 +275,7 @@ function loadData() {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : { entries: [], summaries: {}, periodSummaries: [] };
     return {
-      entries: Array.isArray(parsed.entries) ? parsed.entries : [],
+      entries: Array.isArray(parsed.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments) })) : [],
       summaries: parsed.summaries && typeof parsed.summaries === 'object' ? parsed.summaries : {},
       periodSummaries: Array.isArray(parsed.periodSummaries) ? parsed.periodSummaries : [],
       cloudSync: normalizeCloudMeta(parsed.cloudSync),
@@ -274,6 +294,7 @@ function persistData({ queue = true } = {}) {
     return false;
   }
   renderSyncStatus();
+  scheduleAutomaticBackup();
   if (queue) queueCloudSync();
   return true;
 }
@@ -345,18 +366,20 @@ function draftKey() {
 }
 
 function loadDraft() {
+  const empty = { title: '', content: '', aiSuggestion: '', aiOriginal: '', originalContent: '', attachments: [] };
   const raw = localStorage.getItem(draftKey());
-  if (!raw) return { title: '', content: '', aiSuggestion: '', aiOriginal: '', originalContent: '' };
+  if (!raw) return empty;
   try {
     const draft = JSON.parse(raw);
-    return { title: '', content: '', aiSuggestion: '', aiOriginal: '', originalContent: '', ...draft };
+    return { ...empty, ...draft, attachments: normalizeAttachments(draft.attachments) };
   } catch {
-    return { title: '', content: '', aiSuggestion: '', aiOriginal: '', originalContent: '' };
+    return empty;
   }
 }
 
 function saveDraftObject(draft, message = '草稿已保存') {
-  localStorage.setItem(draftKey(), JSON.stringify(draft));
+  const normalizedDraft = { ...draft, attachments: normalizeAttachments(draft.attachments) };
+  localStorage.setItem(draftKey(), JSON.stringify(normalizedDraft));
   elements.draftStatus.textContent = message;
   updateWordCount();
 }
@@ -376,6 +399,240 @@ function saveDraft() {
   saveDraftObject(draft);
   renderEditorAiSuggestion(draft);
 }
+
+function attachmentFileName(value) {
+  const name = String(value || '').split(/[\\/]/).pop().trim();
+  return name.slice(0, MAX_ATTACHMENT_NAME_CHARS) || '未命名附件';
+}
+
+function isAllowedAttachmentMime(type) {
+  return ALLOWED_ATTACHMENT_TYPES.has(String(type || '').toLowerCase());
+}
+
+function attachmentDataUrlIsSafe(value, type) {
+  if (typeof value !== 'string' || value.length > MAX_ATTACHMENT_DATA_URL_CHARS) return false;
+  const match = value.match(/^data:([^;,]+);base64,([a-z0-9+/=]+)$/i);
+  return Boolean(match && match[1].toLowerCase() === String(type || '').toLowerCase() && isAllowedAttachmentMime(match[1]));
+}
+
+function normalizeAttachment(value) {
+  if (!value || typeof value !== 'object' || !isUuid(value.id)) return null;
+  const type = String(value.type || '').toLowerCase();
+  const size = Number(value.size);
+  if (!isAllowedAttachmentMime(type) || !Number.isSafeInteger(size) || size < 0 || size > MAX_ATTACHMENT_BYTES) return null;
+  if (!attachmentDataUrlIsSafe(value.dataUrl, type)) return null;
+  return {
+    id: value.id,
+    name: attachmentFileName(value.name),
+    type,
+    size,
+    dataUrl: value.dataUrl,
+  };
+}
+
+function normalizeAttachments(value) {
+  if (!Array.isArray(value)) return [];
+  const ids = new Set();
+  let total = 0;
+  return value.reduce((attachments, candidate) => {
+    const attachment = normalizeAttachment(candidate);
+    if (!attachment || ids.has(attachment.id) || attachments.length >= MAX_ATTACHMENT_COUNT) return attachments;
+    if (total + attachment.size > MAX_ATTACHMENTS_TOTAL_BYTES) return attachments;
+    ids.add(attachment.id);
+    total += attachment.size;
+    attachments.push(attachment);
+    return attachments;
+  }, []);
+}
+
+function attachmentSizeLabel(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageAttachment(attachment) {
+  return attachment.type.startsWith('image/');
+}
+
+function readAttachmentFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('error', () => reject(new Error('文件读取失败')));
+    reader.addEventListener('load', () => resolve({
+      id: crypto.randomUUID(),
+      name: attachmentFileName(file.name),
+      type: file.type.toLowerCase(),
+      size: file.size,
+      dataUrl: String(reader.result || ''),
+    }), { once: true });
+    reader.readAsDataURL(file);
+  });
+}
+
+async function attachFiles(files) {
+  const draft = loadDraft();
+  const current = normalizeAttachments(draft.attachments);
+  const selected = Array.from(files || []);
+  if (!selected.length) return;
+  const attached = [];
+  let skipped = 0;
+  let total = current.reduce((sum, attachment) => sum + attachment.size, 0);
+
+  for (const file of selected) {
+    if (current.length + attached.length >= MAX_ATTACHMENT_COUNT
+      || !isAllowedAttachmentMime(file.type)
+      || file.size > MAX_ATTACHMENT_BYTES
+      || total + file.size > MAX_ATTACHMENTS_TOTAL_BYTES) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const attachment = normalizeAttachment(await readAttachmentFile(file));
+      if (!attachment) {
+        skipped += 1;
+        continue;
+      }
+      attached.push(attachment);
+      total += attachment.size;
+    } catch {
+      skipped += 1;
+    }
+  }
+
+  if (!attached.length) {
+    showToast(`未添加附件：单个不超过 ${attachmentSizeLabel(MAX_ATTACHMENT_BYTES)}，最多 ${MAX_ATTACHMENT_COUNT} 个`);
+    return;
+  }
+  const updatedDraft = { ...draft, attachments: [...current, ...attached] };
+  saveDraftObject(updatedDraft, `已添加 ${attached.length} 个附件`);
+  renderDraftAttachments(updatedDraft.attachments);
+  if (skipped) showToast(`${skipped} 个文件未添加：格式、数量或大小超出限制`);
+}
+
+function removeDraftAttachment(id) {
+  const draft = loadDraft();
+  const attachments = normalizeAttachments(draft.attachments).filter((attachment) => attachment.id !== id);
+  const updatedDraft = { ...draft, attachments };
+  saveDraftObject(updatedDraft, '附件已移除');
+  renderDraftAttachments(attachments);
+}
+
+function downloadAttachment(attachment) {
+  if (!attachmentDataUrlIsSafe(attachment?.dataUrl, attachment?.type)) return;
+  const link = document.createElement('a');
+  link.href = attachment.dataUrl;
+  link.download = attachmentFileName(attachment.name);
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function attachmentVisual(attachment) {
+  const visual = isImageAttachment(attachment) ? document.createElement('img') : document.createElement('span');
+  if (visual instanceof HTMLImageElement) {
+    visual.className = 'attachment-preview-image';
+    visual.src = attachment.dataUrl;
+    visual.alt = attachment.name;
+  } else {
+    visual.className = 'attachment-file-mark';
+    visual.textContent = attachment.type === 'application/pdf' ? 'PDF' : '附件';
+  }
+  return visual;
+}
+
+function renderDraftAttachments(attachments) {
+  const list = elements.draftAttachments;
+  const normalized = normalizeAttachments(attachments);
+  list.replaceChildren();
+  list.hidden = !normalized.length;
+  normalized.forEach((attachment) => {
+    const item = document.createElement('article');
+    item.className = 'attachment-preview';
+    const download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'attachment-open';
+    download.title = `下载 ${attachment.name}`;
+    download.append(attachmentVisual(attachment));
+    const detail = document.createElement('span');
+    detail.className = 'attachment-detail';
+    const name = document.createElement('strong');
+    name.textContent = attachment.name;
+    const size = document.createElement('small');
+    size.textContent = attachmentSizeLabel(attachment.size);
+    detail.append(name, size);
+    download.append(detail);
+    download.addEventListener('click', () => downloadAttachment(attachment));
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'attachment-remove';
+    remove.setAttribute('aria-label', `移除 ${attachment.name}`);
+    remove.textContent = '×';
+    remove.addEventListener('click', () => removeDraftAttachment(attachment.id));
+    item.append(download, remove);
+    list.append(item);
+  });
+}
+
+function renderEntryAttachments(attachments) {
+  const normalized = normalizeAttachments(attachments);
+  if (!normalized.length) return null;
+  const list = document.createElement('div');
+  list.className = 'entry-attachments';
+  normalized.forEach((attachment) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'entry-attachment';
+    item.title = `下载 ${attachment.name}`;
+    item.append(attachmentVisual(attachment));
+    const detail = document.createElement('span');
+    detail.className = 'entry-attachment-detail';
+    const name = document.createElement('strong');
+    name.textContent = attachment.name;
+    const size = document.createElement('small');
+    size.textContent = attachmentSizeLabel(attachment.size);
+    detail.append(name, size);
+    item.append(detail);
+    item.addEventListener('click', () => downloadAttachment(attachment));
+    list.append(item);
+  });
+  return list;
+}
+
+function scheduleAutomaticBackup() {
+  clearTimeout(state.backup.timer);
+  state.backup.timer = window.setTimeout(() => { void saveAutomaticBackup(); }, AUTO_BACKUP_DELAY_MS);
+}
+
+function saveAutomaticBackup() {
+  if (!('indexedDB' in window)) return Promise.resolve(false);
+  const snapshot = {
+    id: `${new Date().toISOString()}-${crypto.randomUUID()}`,
+    backedUpAt: new Date().toISOString(),
+    data: structuredClone(state.data),
+  };
+  return new Promise((resolve) => {
+    const request = indexedDB.open(AUTO_BACKUP_DB, 1);
+    request.addEventListener('upgradeneeded', () => {
+      if (!request.result.objectStoreNames.contains(AUTO_BACKUP_STORE)) request.result.createObjectStore(AUTO_BACKUP_STORE, { keyPath: 'id' });
+    });
+    request.addEventListener('error', () => resolve(false));
+    request.addEventListener('success', () => {
+      const database = request.result;
+      const transaction = database.transaction(AUTO_BACKUP_STORE, 'readwrite');
+      const store = transaction.objectStore(AUTO_BACKUP_STORE);
+      store.put(snapshot);
+      const keys = store.getAllKeys();
+      keys.addEventListener('success', () => {
+        keys.result.sort().slice(0, -AUTO_BACKUP_SNAPSHOT_COUNT).forEach((key) => store.delete(key));
+      });
+      transaction.addEventListener('complete', () => { database.close(); resolve(true); });
+      transaction.addEventListener('abort', () => { database.close(); resolve(false); });
+      transaction.addEventListener('error', () => { database.close(); resolve(false); });
+    });
+  });
+}
+
 
 function render() {
   renderToday();
@@ -405,6 +662,7 @@ function renderToday() {
   elements.entryTitle.value = draft.title;
   elements.entryContent.value = draft.content;
   renderEditorAiSuggestion(draft);
+  renderDraftAttachments(draft.attachments);
   updateWordCount();
 }
 
@@ -430,6 +688,8 @@ function renderEntries() {
     fragment.querySelector('.entry-time').textContent = timeFormatter.format(new Date(entry.createdAt));
     fragment.querySelector('.entry-card-title').textContent = entry.title || '未命名片段';
     fragment.querySelector('.entry-content').textContent = entry.content;
+    const attachmentList = renderEntryAttachments(entry.attachments);
+    if (attachmentList) fragment.querySelector('.entry-content').after(attachmentList);
     const originalVersion = fragment.querySelector('.original-version');
     if (entry.originalContent) {
       originalVersion.hidden = false;
@@ -548,6 +808,8 @@ function renderCalendarArchive() {
       const content = document.createElement('p');
       content.textContent = entry.content;
       article.append(meta, title, content);
+      const attachmentList = renderEntryAttachments(entry.attachments);
+      if (attachmentList) article.append(attachmentList);
       group.append(article);
     });
     elements.calendarArchiveList.append(group);
@@ -630,7 +892,7 @@ function renderSearchResults() {
   }
   const matches = state.data.entries
     .filter((entry) => !entry.deletedAt)
-    .filter((entry) => `${entry.title} ${entry.content} ${entry.originalContent ?? ''}`.toLocaleLowerCase().includes(query))
+    .filter((entry) => `${entry.title} ${entry.content} ${entry.originalContent ?? ''} ${normalizeAttachments(entry.attachments).map((attachment) => attachment.name).join(' ')}`.toLocaleLowerCase().includes(query))
     .sort((a, b) => b.date.localeCompare(a.date));
   if (!matches.length) {
     const empty = document.createElement('div');
@@ -686,6 +948,7 @@ function saveNewEntry() {
     title,
     content,
     originalContent: draft.originalContent || '',
+    attachments: normalizeAttachments(draft.attachments),
     createdAt: now,
     updatedAt: now,
   };
@@ -1069,7 +1332,7 @@ async function summarizePeriod() {
 }
 
 function exportData() {
-  const payload = { app: '岁笺 Calendar Journal', version: 2, exportedAt: new Date().toISOString(), data: state.data };
+  const payload = { app: '岁笺 Calendar Journal', version: 3, exportedAt: new Date().toISOString(), data: state.data };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -1104,6 +1367,7 @@ function normalizeImportedEntry(entry) {
     title: entry.title || '',
     content: entry.content,
     originalContent: entry.originalContent || '',
+    attachments: normalizeAttachments(entry.attachments),
     createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
     updatedAt: typeof entry.updatedAt === 'string' ? entry.updatedAt : new Date().toISOString(),
     ...(typeof entry.deletedAt === 'string' ? { deletedAt: entry.deletedAt } : {}),
@@ -1566,6 +1830,7 @@ function remoteEntryToLocal(entry) {
     title: entry.title || '',
     content: entry.content || '',
     originalContent: entry.original_content || '',
+    attachments: normalizeAttachments(entry.attachments),
     createdAt: entry.created_at,
     updatedAt: entry.updated_at,
     deletedAt: entry.deleted_at || undefined,
@@ -1644,7 +1909,7 @@ function markAllCloudDirty() {
 }
 
 async function pullCloudData() {
-  const entryColumns = 'id,entry_date,title,content,original_content,created_at,updated_at,deleted_at';
+  const entryColumns = 'id,entry_date,title,content,original_content,attachments,created_at,updated_at,deleted_at';
   const summaryColumns = 'id,entry_date,content,model,created_at,updated_at,deleted_at';
   const periodColumns = 'id,start_date,end_date,entry_ids,content,model,created_at,updated_at,deleted_at';
   const [entries, dailySummaries, periodSummaries] = await Promise.all([
@@ -1663,6 +1928,7 @@ function entryToCloud(entry, userId) {
     title: entry.title || '',
     content: entry.content || '',
     original_content: entry.originalContent || '',
+    attachments: normalizeAttachments(entry.attachments),
     created_at: entry.createdAt,
     updated_at: entry.updatedAt,
     deleted_at: entry.deletedAt || null,
@@ -2009,11 +2275,17 @@ function bindEvents() {
   });
   elements.entryTitle.addEventListener('input', scheduleDraftSave);
   elements.entryContent.addEventListener('input', scheduleDraftSave);
+  elements.addAttachment.addEventListener('click', () => elements.attachmentInput.click());
+  elements.attachmentInput.addEventListener('change', async (event) => {
+    await attachFiles(event.target.files);
+    event.target.value = '';
+  });
   elements.clearDraft.addEventListener('click', () => {
     elements.entryTitle.value = '';
     elements.entryContent.value = '';
     localStorage.removeItem(draftKey());
     updateWordCount();
+    renderDraftAttachments([]);
     renderEditorAiSuggestion({});
     elements.draftStatus.textContent = '草稿已清空';
   });

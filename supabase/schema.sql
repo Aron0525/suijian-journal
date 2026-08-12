@@ -7,10 +7,14 @@ create table if not exists public.journal_entries (
   title text not null default '',
   content text not null,
   original_content text not null default '',
+  attachments jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+
+alter table public.journal_entries
+  add column if not exists attachments jsonb not null default '[]'::jsonb;
 
 create table if not exists public.daily_summaries (
   id uuid primary key default gen_random_uuid(),
