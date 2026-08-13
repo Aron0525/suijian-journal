@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v25';
-const RELEASE = '20260812-journal-completion';
+const CACHE_NAME = 'suijian-pwa-v27';
+const RELEASE = '20260812-archive-entry-tags';
 const ASSETS = [
   './',
   './index.html',

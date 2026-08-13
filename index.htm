@@ -197,6 +197,30 @@
       </article>
     </template>
 
+    <dialog id="entry-detail-dialog" class="workspace-dialog entry-detail-dialog" aria-labelledby="entry-detail-dialog-title">
+      <form id="entry-detail-form" class="workspace-dialog-body entry-detail-form">
+        <button id="close-entry-detail" type="button" class="icon-button workspace-dialog-close" aria-label="关闭日记窗口">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">日记详情</p>
+            <h1 id="entry-detail-dialog-title">查看并修改日记</h1>
+          </div>
+        </div>
+        <p id="entry-detail-date" class="entry-detail-date"></p>
+        <label>标题（可不填）<input id="entry-detail-title" type="text" maxlength="80" placeholder="给这条记录起个标题" /></label>
+        <div class="entry-detail-fields">
+          <label>心情<select id="entry-detail-mood"><option value="">暂不选择</option><option value="舒展">舒展</option><option value="平静">平静</option><option value="充实">充实</option><option value="开心">开心</option><option value="焦虑">焦虑</option><option value="低落">低落</option><option value="疲惫">疲惫</option><option value="烦躁">烦躁</option></select></label>
+          <label>标签<input id="entry-detail-tags" type="text" maxlength="120" placeholder="例如：工作，阅读" list="journal-tag-options" /></label>
+        </div>
+        <label>日记内容<textarea id="entry-detail-content" rows="11" maxlength="10000" required></textarea></label>
+        <p id="entry-detail-attachment-note" class="entry-detail-attachment-note"></p>
+        <div class="dialog-actions">
+          <button id="cancel-entry-detail" type="button" class="quiet-button">取消</button>
+          <button id="save-entry-detail" type="submit" class="primary-button">保存修改</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="draft-library-dialog" class="workspace-dialog draft-library-dialog" aria-labelledby="draft-library-title">
       <div class="workspace-dialog-body">
         <button id="close-draft-library-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭草稿箱">×</button>
@@ -531,6 +555,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260812-journal-completion" defer></script>
+    <script src="./app.js?release=20260812-archive-entry-tags" defer></script>
   </body>
 </html>

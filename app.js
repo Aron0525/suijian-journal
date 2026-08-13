@@ -97,6 +97,7 @@ const state = {
   reviewYear: new Date().getFullYear(),
   reviewMode: 'year',
   reminder: { settings: loadReminderSettings(), status: '', timer: 0 },
+  editingEntryId: '',
 };
 
 const elements = {
@@ -108,6 +109,16 @@ const elements = {
   entryTitle: document.querySelector('#entry-title'),
   entryMood: document.querySelector('#entry-mood'),
   entryTags: document.querySelector('#entry-tags'),
+  entryDetailDialog: document.querySelector('#entry-detail-dialog'),
+  closeEntryDetail: document.querySelector('#close-entry-detail'),
+  entryDetailForm: document.querySelector('#entry-detail-form'),
+  entryDetailDate: document.querySelector('#entry-detail-date'),
+  entryDetailTitle: document.querySelector('#entry-detail-title'),
+  entryDetailMood: document.querySelector('#entry-detail-mood'),
+  entryDetailTags: document.querySelector('#entry-detail-tags'),
+  entryDetailContent: document.querySelector('#entry-detail-content'),
+  entryDetailAttachmentNote: document.querySelector('#entry-detail-attachment-note'),
+  cancelEntryDetail: document.querySelector('#cancel-entry-detail'),
   journalTagOptions: document.querySelector('#journal-tag-options'),
   entryContent: document.querySelector('#entry-content'),
   wordCount: document.querySelector('#word-count'),
@@ -474,6 +485,19 @@ function renderEntryMetadata(target, entry) {
     chip.textContent = `# ${tag}`;
     target.append(chip);
   });
+}
+
+function renderOptionalEntryTitle(target, entry) {
+  if (!target) return;
+  const title = String(entry?.title || '').trim();
+  target.hidden = !title;
+  target.textContent = title;
+}
+
+function archiveEntryLabel(entry) {
+  const title = String(entry?.title || '').trim();
+  if (title) return title;
+  return String(entry?.content || '').replace(/\s+/g, ' ').trim();
 }
 
 function refreshJournalTagOptions() {
@@ -1555,7 +1579,7 @@ function renderEntries() {
   entries.forEach((entry) => {
     const fragment = elements.entryTemplate.content.cloneNode(true);
     fragment.querySelector('.entry-time').textContent = timeFormatter.format(new Date(entry.createdAt));
-    fragment.querySelector('.entry-card-title').textContent = entry.title || '未命名片段';
+    renderOptionalEntryTitle(fragment.querySelector('.entry-card-title'), entry);
     renderEntryMetadata(fragment.querySelector('.entry-card-meta'), entry);
     fragment.querySelector('.entry-content').textContent = entry.content;
     const attachmentList = renderEntryAttachments(entry.attachments);
@@ -1666,24 +1690,28 @@ function renderCalendarArchive() {
     rule.setAttribute('aria-hidden', 'true');
     dayHead.append(dayLabel, dot, count, rule);
     group.append(dayHead);
+    const tags = document.createElement('div');
+    tags.className = 'calendar-entry-tags';
     dayEntries.forEach((entry) => {
-      const article = document.createElement('article');
-      article.className = 'calendar-archive-entry';
-      const meta = document.createElement('p');
-      meta.className = 'calendar-entry-meta';
-      meta.textContent = timeFormatter.format(new Date(entry.createdAt));
-      const title = document.createElement('h3');
-      title.textContent = entry.title || '未命名片段';
-      const metadata = document.createElement('div');
-      metadata.className = 'entry-metadata archive-entry-meta';
-      renderEntryMetadata(metadata, entry);
-      const content = document.createElement('p');
-      content.textContent = entry.content;
-      article.append(meta, title, metadata, content);
-      const attachmentList = renderEntryAttachments(entry.attachments);
-      if (attachmentList) article.append(attachmentList);
-      group.append(article);
+      const tag = document.createElement('button');
+      tag.type = 'button';
+      tag.className = 'calendar-archive-entry-tag';
+      tag.setAttribute('aria-label', `打开并修改 ${dayLabel.textContent} 的日记：${archiveEntryLabel(entry)}`);
+      const time = document.createElement('span');
+      time.className = 'calendar-archive-entry-tag-time';
+      time.textContent = timeFormatter.format(new Date(entry.createdAt));
+      const label = document.createElement('span');
+      label.className = 'calendar-archive-entry-tag-label';
+      label.textContent = archiveEntryLabel(entry);
+      const detail = document.createElement('span');
+      detail.className = 'calendar-archive-entry-tag-detail';
+      const attachmentCount = normalizeAttachments(entry.attachments).length;
+      detail.textContent = attachmentCount ? `附件 ${attachmentCount}` : '编辑';
+      tag.append(time, label, detail);
+      tag.addEventListener('click', () => openEntryDetail(entry.id));
+      tags.append(tag);
     });
+    group.append(tags);
     elements.calendarArchiveList.append(group);
   });
 }
@@ -1823,7 +1851,9 @@ function renderSearchResults() {
     date.className = 'search-result-date';
     date.textContent = entry.date;
     const title = document.createElement('h3');
-    appendHighlightedText(title, entry.title || '未命名片段', query);
+    const hasTitle = Boolean(String(entry.title || '').trim());
+    title.hidden = !hasTitle;
+    if (hasTitle) appendHighlightedText(title, entry.title, query);
     const metadata = document.createElement('div');
     metadata.className = 'entry-metadata search-result-meta';
     renderEntryMetadata(metadata, entry);
@@ -2032,6 +2062,62 @@ function openSearchDialog() {
 
 function closeSearchDialog() {
   closeWorkspaceDialog(elements.searchDialog);
+}
+
+function entryForEditing(id) {
+  return state.data.entries.find((entry) => entry.id === id && !entry.deletedAt) || null;
+}
+
+function openEntryDetail(entryId) {
+  const entry = entryForEditing(entryId);
+  if (!entry) return;
+  state.editingEntryId = entry.id;
+  const date = parseDateKey(entry.date);
+  elements.entryDetailDate.textContent = `${dateFormatter.format(date)} · ${timeFormatter.format(new Date(entry.createdAt))}`;
+  elements.entryDetailTitle.value = entry.title || '';
+  elements.entryDetailMood.value = normalizeMood(entry.mood);
+  elements.entryDetailTags.value = normalizeTags(entry.tags).join('，');
+  elements.entryDetailContent.value = entry.content || '';
+  const attachmentCount = normalizeAttachments(entry.attachments).length;
+  elements.entryDetailAttachmentNote.textContent = attachmentCount
+    ? `这条日记附有 ${attachmentCount} 个图片或附件，保存文字修改时会继续保留。`
+    : '修改后会自动同步到已登录的设备。';
+  openWorkspaceDialog(elements.entryDetailDialog, elements.entryDetailContent);
+}
+
+function closeEntryDetail() {
+  state.editingEntryId = '';
+  closeWorkspaceDialog(elements.entryDetailDialog);
+}
+
+function saveEntryDetail() {
+  const entry = entryForEditing(state.editingEntryId);
+  if (!entry) {
+    closeEntryDetail();
+    return;
+  }
+  const content = elements.entryDetailContent.value.trim();
+  if (!content) {
+    showToast('日记内容不能为空');
+    elements.entryDetailContent.focus();
+    return;
+  }
+  const now = new Date().toISOString();
+  const title = elements.entryDetailTitle.value.trim().slice(0, MAX_ENTRY_TITLE_CHARS);
+  const tags = normalizeTags(elements.entryDetailTags.value);
+  const mood = normalizeMood(elements.entryDetailMood.value);
+  if (!persistDataChange(() => {
+    entry.title = title;
+    entry.tags = tags;
+    entry.mood = mood;
+    entry.content = content.slice(0, MAX_ENTRY_CONTENT_CHARS);
+    entry.updatedAt = now;
+    markCloudDirty('entries', entry.id);
+    invalidateDailySummary(entry.date, now);
+  })) return;
+  closeEntryDetail();
+  render();
+  showToast('日记修改已保存');
 }
 
 function savePromptEditor() {
@@ -3671,10 +3757,17 @@ function bindEvents() {
   window.addEventListener('pagehide', syncBeforeLeaving);
   elements.closePeriodSummaryDialog.addEventListener('click', closePeriodSummaryDialog);
   elements.closeSearchDialog.addEventListener('click', closeSearchDialog);
+  elements.closeEntryDetail.addEventListener('click', closeEntryDetail);
+  elements.cancelEntryDetail.addEventListener('click', closeEntryDetail);
+  elements.entryDetailForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    saveEntryDetail();
+  });
   elements.draftLibraryButton.addEventListener('click', openDraftLibrary);
   elements.closeDraftLibraryDialog.addEventListener('click', closeDraftLibrary);
   closeDialogOnBackdrop(elements.periodSummaryDialog, closePeriodSummaryDialog);
   closeDialogOnBackdrop(elements.searchDialog, closeSearchDialog);
+  closeDialogOnBackdrop(elements.entryDetailDialog, closeEntryDetail);
   closeDialogOnBackdrop(elements.draftLibraryDialog, closeDraftLibrary);
   elements.goToday.addEventListener('click', () => {
     state.activeDate = localDateKey();
@@ -3789,5 +3882,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260812-journal-completion'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260812-archive-entry-tags'));
 }
