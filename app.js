@@ -89,7 +89,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, tasksSupported: null },
+  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -2798,7 +2798,9 @@ function renderSyncStatus() {
     elements.syncStatus.textContent = '正在同步';
     return;
   }
-  elements.syncStatus.textContent = hasCloudChanges() ? '等待云同步' : '云端已同步';
+  elements.syncStatus.textContent = hasCloudChanges()
+    ? '等待云同步'
+    : (state.cloud.attachmentsSupported === false ? '文本日记已同步（兼容模式）' : '云端已同步');
 }
 
 function renderCloudAccountDialog() {
@@ -2826,10 +2828,13 @@ function renderCloudSyncDialog() {
   elements.syncLoginRequired.hidden = Boolean(session);
   elements.syncActivePanel.hidden = !session;
   elements.syncAccountBrief.textContent = session?.user?.email || '尚未登录同步账号';
+  const compatibilityNotice = state.cloud.attachmentsSupported === false
+    ? '云端日记表尚未迁移附件字段，已启用文本同步兼容模式；图片、标签和心情仍保留在本机。'
+    : '';
   elements.syncAccountMessage.textContent = session
     ? (accountId && accountId !== session.user.id
       ? '检测到本机曾使用其他账号。立即同步时会先让你确认是否合并。'
-      : (hasCloudChanges() ? '本机有新内容等待上传。' : '登录、返回前台和每 10 分钟都会自动同步。'))
+      : (hasCloudChanges() ? '本机有新内容等待上传。' : (`登录、返回前台和每 10 分钟都会自动同步。${compatibilityNotice}`)))
     : '登录后，日记、当天摘要与跨日汇总会保存到你的云端账号。';
   elements.syncDialogCopy.textContent = session
     ? '这里仅处理跨设备同步，不修改你的日记内容。'
@@ -3060,8 +3065,11 @@ function incomingWins(local, remote) {
   return Boolean(remote.deletedAt || remote.deleted_at) && !(local?.deletedAt || local?.deleted_at);
 }
 
-function remoteEntryToLocal(entry) {
-  const payload = attachmentPayload(entry.attachments);
+function remoteEntryToLocal(entry, localEntry = null) {
+  const preserveLocalAttachmentMetadata = state.cloud.attachmentsSupported === false && localEntry;
+  const payload = preserveLocalAttachmentMetadata
+    ? { files: normalizeAttachments(localEntry.attachments), tags: normalizeTags(localEntry.tags), mood: normalizeMood(localEntry.mood) }
+    : attachmentPayload(entry.attachments);
   return {
     id: entry.id,
     date: entry.entry_date,
@@ -3117,8 +3125,9 @@ function remotePeriodToLocal(summary) {
 
 function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = [], tasks = [] }) {
   const entryMap = new Map(state.data.entries.map((entry) => [entry.id, entry]));
-  entries.map(remoteEntryToLocal).forEach((remote) => {
-    const local = entryMap.get(remote.id);
+  entries.forEach((remoteRecord) => {
+    const local = entryMap.get(remoteRecord.id);
+    const remote = remoteEntryToLocal(remoteRecord, local);
     if (!local || incomingWins(local, remote)) entryMap.set(remote.id, remote);
   });
   state.data.entries = [...entryMap.values()];
@@ -3174,13 +3183,32 @@ function markAllCloudDirty() {
 
 async function pullCloudData() {
   const entryColumns = 'id,entry_date,title,content,original_content,attachments,created_at,updated_at,deleted_at';
+  const legacyEntryColumns = 'id,entry_date,title,content,original_content,created_at,updated_at,deleted_at';
   const summaryColumns = 'id,entry_date,content,model,created_at,updated_at,deleted_at';
   const periodColumns = 'id,start_date,end_date,entry_ids,content,model,created_at,updated_at,deleted_at';
-  const [entries, dailySummaries, periodSummaries] = await Promise.all([
-    cloudRequest(`/rest/v1/journal_entries?select=${encodeURIComponent(entryColumns)}&order=updated_at.desc`),
+  const requestSupportingRecords = () => Promise.all([
     cloudRequest(`/rest/v1/daily_summaries?select=${encodeURIComponent(summaryColumns)}&order=updated_at.desc`),
     cloudRequest(`/rest/v1/period_summaries?select=${encodeURIComponent(periodColumns)}&order=updated_at.desc`),
   ]);
+  let entries;
+  let dailySummaries;
+  let periodSummaries;
+  try {
+    [entries, [dailySummaries, periodSummaries]] = await Promise.all([
+      cloudRequest(`/rest/v1/journal_entries?select=${encodeURIComponent(entryColumns)}&order=updated_at.desc`),
+      requestSupportingRecords(),
+    ]);
+    state.cloud.attachmentsSupported = true;
+  } catch (error) {
+    if (!isMissingCloudAttachmentsColumn(error)) throw error;
+    const firstCompatibilitySync = state.cloud.attachmentsSupported !== false;
+    state.cloud.attachmentsSupported = false;
+    [entries, [dailySummaries, periodSummaries]] = await Promise.all([
+      cloudRequest(`/rest/v1/journal_entries?select=${encodeURIComponent(legacyEntryColumns)}&order=updated_at.desc`),
+      requestSupportingRecords(),
+    ]);
+    if (firstCompatibilitySync) recordCloudActivity('云端日记表尚未迁移附件字段，已启用文本同步兼容模式', 'info');
+  }
   let tasks = [];
   try {
     tasks = await cloudRequest('/rest/v1/journal_tasks?select=id,entry_id,source_key,content,completed,created_at,updated_at,deleted_at&order=updated_at.desc');
@@ -3191,19 +3219,25 @@ async function pullCloudData() {
   mergeRemoteData({ entries, dailySummaries, periodSummaries, tasks });
 }
 
+function isMissingCloudAttachmentsColumn(error) {
+  const message = error instanceof Error ? error.message : '';
+  return message.includes('column journal_entries.attachments does not exist');
+}
+
 function entryToCloud(entry, userId) {
-  return {
+  const payload = {
     id: entry.id,
     user_id: userId,
     entry_date: entry.date,
     title: entry.title || '',
     content: entry.content || '',
     original_content: entry.originalContent || '',
-    attachments: cloudAttachmentPayload(entry),
     created_at: entry.createdAt,
     updated_at: entry.updatedAt,
     deleted_at: entry.deletedAt || null,
   };
+  if (state.cloud.attachmentsSupported !== false) payload.attachments = cloudAttachmentPayload(entry);
+  return payload;
 }
 
 function taskToCloud(task, userId) {
@@ -3231,6 +3265,7 @@ async function uploadAttachmentToCloud(entry, attachment, userId) {
 }
 
 async function promoteEntryAttachmentsToCloud(entry, userId) {
+  if (state.cloud.attachmentsSupported === false) return false;
   const attachments = normalizeAttachments(entry.attachments);
   if (!attachments.some((attachment) => attachment.dataUrl && !attachment.storagePath)) return false;
   const promoted = [];
@@ -3882,5 +3917,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260812-archive-entry-tags'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260813-sync-compat-v111'));
 }
