@@ -3681,7 +3681,7 @@ function notifyNativeBundleReady(updater) {
   return state.nativeUpdate.readyPromise;
 }
 
-async function checkNativeAppUpdate({ quiet = true } = {}) {
+async function checkNativeAppUpdate({ quiet = true, applyImmediately = false } = {}) {
   const updater = nativeUpdater();
   if (!updater || state.nativeUpdate.checking) return null;
   state.nativeUpdate.checking = true;
@@ -3700,6 +3700,11 @@ async function checkNativeAppUpdate({ quiet = true } = {}) {
 
     const bundle = await updater.download({ url: manifest.url, version: manifest.version, checksum: manifest.checksum });
     await updater.next({ id: bundle.id });
+    // Cold-start updates should become active before the user starts writing.
+    if (applyImmediately) {
+      await updater.reload();
+      return { available: true, applying: true };
+    }
     if (!quiet) showToast('网页更新已下载，退出或重开 App 后会自动启用');
     return { available: true };
   } catch (error) {
@@ -3715,7 +3720,7 @@ function initializeNativeUpdates() {
   if (!updater) return;
   // This runs before cloud/API work so a newly switched bundle can prove it booted.
   void notifyNativeBundleReady(updater);
-  void checkNativeAppUpdate({ quiet: true });
+  void checkNativeAppUpdate({ quiet: true, applyImmediately: true });
   void checkNativeInstallerUpdate({ quiet: true });
   clearInterval(state.nativeUpdate.timer);
   clearInterval(state.nativeInstaller.timer);
@@ -3917,5 +3922,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260813-sync-compat-v111'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260813-open-auto-update'));
 }
