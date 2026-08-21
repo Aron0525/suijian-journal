@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [mobileVersionSource, nativeManifestBuilder, workflow, gitignore, androidManifest, readme] = await Promise.all([
+const [mobileVersionSource, nativeManifestBuilder, workflow, ciWorkflow, gitignore, androidManifest, readme] = await Promise.all([
   readFile(new URL('../mobile-version.json', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/build-native-update-manifest.mjs', import.meta.url), 'utf8'),
   readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8'),
+  readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
   readFile(new URL('../.gitignore', import.meta.url), 'utf8'),
   readFile(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8'),
   readFile(new URL('../README.md', import.meta.url), 'utf8'),
@@ -25,6 +26,9 @@ assert.match(workflow, /git diff --quiet "\$BASE_SHA" HEAD -- android build-andr
 assert.match(workflow, /node --input-type=module - "\$BASE_SHA" <<'NODE'/);
 assert.match(workflow, /current\.versionCode > previous\.versionCode/);
 assert.match(workflow, /node tests\/release-guard-regression\.mjs/);
+assert.match(ciWorkflow, /pull_request:/);
+assert.match(ciWorkflow, /npm run check/);
+assert.match(ciWorkflow, /npm test/);
 
 assert.match(gitignore, /^android\/signing\.properties$/m);
 assert.match(gitignore, /^signing\.properties$/m);
