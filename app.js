@@ -89,7 +89,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null },
+  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, lastError: '' },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -119,6 +119,7 @@ const elements = {
   entryDetailContent: document.querySelector('#entry-detail-content'),
   entryDetailAttachmentNote: document.querySelector('#entry-detail-attachment-note'),
   cancelEntryDetail: document.querySelector('#cancel-entry-detail'),
+  deleteEntryDetail: document.querySelector('#delete-entry-detail'),
   journalTagOptions: document.querySelector('#journal-tag-options'),
   entryContent: document.querySelector('#entry-content'),
   wordCount: document.querySelector('#word-count'),
@@ -245,6 +246,7 @@ const elements = {
   searchDialog: document.querySelector('#search-dialog'),
   closeSearchDialog: document.querySelector('#close-search-dialog'),
   exportButton: document.querySelector('#export-button'),
+  importButton: document.querySelector('#import-button'),
   importInput: document.querySelector('#import-input'),
   modelConfigButton: document.querySelector('#model-config-button'),
   aiConfigDialog: document.querySelector('#ai-config-dialog'),
@@ -773,27 +775,108 @@ function normalizeJournalTask(value) {
   return { id: value.id, entryId: value.entryId, sourceKey, text, completed: Boolean(value.completed), createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString(), updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(), ...(typeof value.deletedAt === 'string' ? { deletedAt: value.deletedAt } : {}) };
 }
 
+function tombstoneLinkedTasks(tasks, entryId, now) {
+  return tasks.map((task) => {
+    if (task.entryId !== entryId || task.deletedAt) return task;
+    return { ...task, updatedAt: now, deletedAt: now };
+  });
+}
+
+function tombstoneJournalEntry(entry, now) {
+  entry.deletedAt = now;
+  entry.updatedAt = now;
+  markCloudDirty('entries', entry.id);
+  const deletedTaskIds = state.data.tasks
+    .filter((task) => task.entryId === entry.id && !task.deletedAt)
+    .map((task) => task.id);
+  state.data.tasks = tombstoneLinkedTasks(state.data.tasks, entry.id, now);
+  deletedTaskIds.forEach((id) => markCloudDirty('tasks', id));
+  invalidateDailySummary(entry.date, now);
+}
+
 function extractJournalTasks(entries) {
   const candidates = [];
   entries.forEach((entry) => {
+    if (entry.deletedAt) return;
     const source = `${entry.title || ''}\n${entry.content || ''}`;
     const matches = [...source.matchAll(/(?:待办|TODO|Todo|计划)[：:]\s*([^\n。！？!?]+)/g)];
     matches.forEach((match, matchIndex) => {
       match[1].split(/[、，,；;]/).map((item) => item.trim()).filter((item) => item.length >= 2).slice(0, 5).forEach((text, index) => {
-        candidates.push({ entryId: entry.id, sourceKey: `${entry.id}:${matchIndex}:${index}:${text}`, text: text.slice(0, 180) });
+        candidates.push({ entryId: entry.id, sourceKey: `${entry.id}:${matchIndex}:${index}`, text: text.slice(0, 180) });
       });
     });
   });
   return candidates;
 }
 
+function taskSourceSlot(sourceKey) {
+  return String(sourceKey || '').split(':').slice(0, 3).join(':');
+}
+
+function taskCreatedAt(task) {
+  const value = Date.parse(task?.createdAt || '');
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function reconcileJournalTasks(tasks, entries, now = new Date().toISOString()) {
+  const nextTasks = [...tasks];
+  const changedTaskIds = [];
+  const removedTaskIds = [];
+  const markChanged = (task) => {
+    if (!changedTaskIds.includes(task.id)) changedTaskIds.push(task.id);
+  };
+
+  extractJournalTasks(entries).forEach((candidate) => {
+    const matchingIndexes = nextTasks
+      .map((task, index) => ({ task, index }))
+      .filter(({ task }) => task.entryId === candidate.entryId && taskSourceSlot(task.sourceKey) === candidate.sourceKey)
+      .sort((first, second) => taskCreatedAt(first.task) - taskCreatedAt(second.task) || first.index - second.index);
+
+    if (!matchingIndexes.length) {
+      const task = { ...candidate, id: crypto.randomUUID(), completed: false, createdAt: now, updatedAt: now };
+      nextTasks.push(task);
+      markChanged(task);
+      return;
+    }
+
+    const primary = matchingIndexes[0].task;
+    if (primary.text !== candidate.text || primary.deletedAt) {
+      primary.text = candidate.text;
+      primary.updatedAt = now;
+      delete primary.deletedAt;
+      markChanged(primary);
+    }
+
+    matchingIndexes.slice(1).forEach(({ task }) => {
+      if (task.sourceKey === primary.sourceKey) {
+        const index = nextTasks.indexOf(task);
+        if (index >= 0) nextTasks.splice(index, 1);
+        removedTaskIds.push(task.id);
+        return;
+      }
+      if (!task.deletedAt) {
+        task.updatedAt = now;
+        task.deletedAt = now;
+        markChanged(task);
+      }
+    });
+  });
+
+  return { tasks: nextTasks, changedTaskIds, removedTaskIds };
+}
+
+function reconcileEntryTasks(entries, now = new Date().toISOString()) {
+  const reconciliation = reconcileJournalTasks(state.data.tasks, entries, now);
+  if (!reconciliation.changedTaskIds.length && !reconciliation.removedTaskIds.length) return reconciliation;
+  state.data.tasks = reconciliation.tasks;
+  clearCloudDirty('tasks', reconciliation.removedTaskIds);
+  reconciliation.changedTaskIds.forEach((id) => markCloudDirty('tasks', id));
+  return reconciliation;
+}
+
 function ensureExtractedJournalTasks(entries) {
-  const known = new Set(state.data.tasks.filter((task) => !task.deletedAt).map((task) => task.sourceKey));
-  const now = new Date().toISOString();
-  const additions = extractJournalTasks(entries).filter((task) => !known.has(task.sourceKey)).map((task) => ({ ...task, id: crypto.randomUUID(), completed: false, createdAt: now, updatedAt: now }));
-  if (!additions.length) return;
-  state.data.tasks.push(...additions);
-  additions.forEach((task) => markCloudDirty('tasks', task.id));
+  const reconciliation = reconcileEntryTasks(entries);
+  if (!reconciliation.changedTaskIds.length && !reconciliation.removedTaskIds.length) return;
   persistData();
 }
 
@@ -1590,18 +1673,7 @@ function renderEntries() {
       fragment.querySelector('.original-content').textContent = entry.originalContent;
     }
 
-    fragment.querySelector('.entry-delete').addEventListener('click', () => {
-      if (!window.confirm('删除这条记录？此操作会立即更新本地数据。')) return;
-      const now = new Date().toISOString();
-      if (!persistDataChange(() => {
-        entry.deletedAt = now;
-        entry.updatedAt = now;
-        markCloudDirty('entries', entry.id);
-        invalidateDailySummary(state.activeDate, now);
-      })) return;
-      render();
-      showToast('记录已删除');
-    });
+    fragment.querySelector('.entry-delete').addEventListener('click', () => deleteJournalEntry(entry.id));
     elements.entryList.append(fragment);
   });
 }
@@ -1912,6 +1984,7 @@ function saveNewEntry() {
     state.data.entries.push(entry);
     markCloudDirty('entries', entry.id);
     invalidateDailySummary(state.activeDate, now);
+    reconcileEntryTasks([entry], now);
   })) return;
   localStorage.removeItem(draftKey());
   state.pastedDraft = null;
@@ -2090,6 +2163,22 @@ function closeEntryDetail() {
   closeWorkspaceDialog(elements.entryDetailDialog);
 }
 
+function deleteJournalEntry(entryId) {
+  const entry = entryForEditing(entryId);
+  if (!entry) return false;
+  if (!window.confirm('删除这条记录？日记与关联待办会从其他已同步设备中一并移除。')) return false;
+  const now = new Date().toISOString();
+  if (!persistDataChange(() => tombstoneJournalEntry(entry, now))) return false;
+  if (state.editingEntryId === entry.id) closeEntryDetail();
+  render();
+  showToast('记录已删除');
+  return true;
+}
+
+function deleteEntryDetail() {
+  return deleteJournalEntry(state.editingEntryId);
+}
+
 function saveEntryDetail() {
   const entry = entryForEditing(state.editingEntryId);
   if (!entry) {
@@ -2114,6 +2203,7 @@ function saveEntryDetail() {
     entry.updatedAt = now;
     markCloudDirty('entries', entry.id);
     invalidateDailySummary(entry.date, now);
+    reconcileEntryTasks([entry], now);
   })) return;
   closeEntryDetail();
   render();
@@ -2590,6 +2680,36 @@ function normalizeImportedEntry(entry) {
   };
 }
 
+function shouldMergeImportedEntry(local, incoming) {
+  return Boolean(local && !incoming?.deletedAt && incomingWins(local, incoming));
+}
+
+function shouldRestoreImportedEntry(local, incoming) {
+  return Boolean(local?.deletedAt && shouldMergeImportedEntry(local, incoming));
+}
+
+function resolveImportedEntries(localEntries, incomingEntries) {
+  const localEntriesById = new Map(localEntries.map((entry) => [entry.id, entry]));
+  const seenIncomingEntryIds = new Set();
+  const newEntries = [];
+  const mergedEntries = [];
+  let restoredEntryCount = 0;
+  incomingEntries.forEach((entry) => {
+    if (seenIncomingEntryIds.has(entry.id)) return;
+    seenIncomingEntryIds.add(entry.id);
+    const local = localEntriesById.get(entry.id);
+    if (!local) {
+      newEntries.push(entry);
+      return;
+    }
+    if (shouldMergeImportedEntry(local, entry)) {
+      mergedEntries.push(entry);
+      if (local.deletedAt) restoredEntryCount += 1;
+    }
+  });
+  return { newEntries, mergedEntries, restoredEntryCount };
+}
+
 function normalizeImportedPeriodSummary(summary) {
   if (!summary || !isUuid(summary.id) || !isDateKey(summary.startDate) || !isDateKey(summary.endDate) || summary.startDate > summary.endDate) return null;
   if (!validText(summary.content, MAX_SUMMARY_CHARS) || !Array.isArray(summary.entryIds) || !summary.entryIds.every(isUuid)) return null;
@@ -2613,10 +2733,12 @@ async function importData(file) {
     const parsed = JSON.parse(raw);
     const incoming = parsed.data ?? parsed;
     if (!incoming || !Array.isArray(incoming.entries) || !incoming.summaries || typeof incoming.summaries !== 'object') throw new Error('invalid');
-    const confirmed = window.confirm(`准备导入 ${incoming.entries.length} 条记录。相同 ID 的记录会跳过，是否继续？`);
+    const confirmed = window.confirm(`准备导入 ${incoming.entries.length} 条记录。同 ID 会保留较新版本；备份中较新的记录可恢复本机已删除的日记，是否继续？`);
     if (!confirmed) return;
-    const ids = new Set(state.data.entries.map((entry) => entry.id));
-    const newEntries = incoming.entries.map(normalizeImportedEntry).filter((entry) => entry && !ids.has(entry.id));
+    const { newEntries, mergedEntries, restoredEntryCount } = resolveImportedEntries(
+      state.data.entries,
+      incoming.entries.map(normalizeImportedEntry).filter(Boolean),
+    );
     const incomingSummaries = Object.entries(incoming.summaries)
       .filter(([date, summary]) => isDateKey(date) && validText(typeof summary === 'string' ? summary : summary?.content, MAX_SUMMARY_CHARS))
       .map(([date, summary]) => [date, typeof summary === 'string' ? { content: summary } : summary]);
@@ -2628,20 +2750,28 @@ async function importData(file) {
       ? incoming.periodSummaries.map(normalizeImportedPeriodSummary).filter((summary) => summary && !periodIds.has(summary.id))
       : [];
     const previous = structuredClone(state.data);
+    const mergedEntriesById = new Map(mergedEntries.map((entry) => [entry.id, entry]));
+    state.data.entries = state.data.entries.map((entry) => mergedEntriesById.get(entry.id) || entry);
     state.data.entries.push(...newEntries);
     state.data.summaries = { ...state.data.summaries, ...newSummaries };
     state.data.periodSummaries.push(...newPeriodSummaries);
     state.data.tasks.push(...newTasks);
-    newEntries.forEach((entry) => markCloudDirty('entries', entry.id));
+    reconcileEntryTasks([...newEntries, ...mergedEntries]);
+    const remainingTaskIds = new Set(state.data.tasks.map((task) => task.id));
+    [...newEntries, ...mergedEntries].forEach((entry) => markCloudDirty('entries', entry.id));
     Object.keys(newSummaries).forEach((date) => markCloudDirty('dailySummaries', date));
     newPeriodSummaries.forEach((summary) => markCloudDirty('periodSummaries', summary.id));
-    newTasks.forEach((task) => markCloudDirty('tasks', task.id));
+    newTasks.filter((task) => remainingTaskIds.has(task.id)).forEach((task) => markCloudDirty('tasks', task.id));
     if (!persistData()) {
       state.data = previous;
       throw new Error('storage');
     }
     render();
-    showToast(`已导入 ${newEntries.length} 条记录；跳过了格式不正确或重复的内容`);
+    const mergedLiveCount = mergedEntries.length - restoredEntryCount;
+    const results = [`新增 ${newEntries.length} 条记录`];
+    if (mergedLiveCount) results.push(`合并 ${mergedLiveCount} 条较新记录`);
+    if (restoredEntryCount) results.push(`恢复 ${restoredEntryCount} 条已删除记录`);
+    showToast(`已导入：${results.join('，')}；跳过了格式不正确、重复或较旧的内容`);
   } catch {
     showToast('导入失败：文件格式不正确、内容过大或本地存储空间不足');
   } finally {
@@ -2798,6 +2928,10 @@ function renderSyncStatus() {
     elements.syncStatus.textContent = '正在同步';
     return;
   }
+  if (state.cloud.lastError) {
+    elements.syncStatus.textContent = '云同步失败，等待重试';
+    return;
+  }
   elements.syncStatus.textContent = hasCloudChanges()
     ? '等待云同步'
     : (state.cloud.attachmentsSupported === false ? '文本日记已同步（兼容模式）' : '云端已同步');
@@ -2832,9 +2966,11 @@ function renderCloudSyncDialog() {
     ? '云端日记表尚未迁移附件字段，已启用文本同步兼容模式；图片、标签和心情仍保留在本机。'
     : '';
   elements.syncAccountMessage.textContent = session
-    ? (accountId && accountId !== session.user.id
+    ? (state.cloud.lastError
+      ? `上次同步失败：${state.cloud.lastError}`
+      : (accountId && accountId !== session.user.id
       ? '检测到本机曾使用其他账号。立即同步时会先让你确认是否合并。'
-      : (hasCloudChanges() ? '本机有新内容等待上传。' : (`登录、返回前台和每 10 分钟都会自动同步。${compatibilityNotice}`)))
+      : (hasCloudChanges() ? '本机有新内容等待上传。' : (`登录、返回前台和每 10 分钟都会自动同步。${compatibilityNotice}`))))
     : '登录后，日记、当天摘要与跨日汇总会保存到你的云端账号。';
   elements.syncDialogCopy.textContent = session
     ? '这里仅处理跨设备同步，不修改你的日记内容。'
@@ -3065,6 +3201,32 @@ function incomingWins(local, remote) {
   return Boolean(remote.deletedAt || remote.deleted_at) && !(local?.deletedAt || local?.deleted_at);
 }
 
+function conflictCopyTitle(entry) {
+  const source = String(entry?.title || '').trim() || String(entry?.date || '').trim() || '未命名日记';
+  return `同步冲突副本 · ${source}`.slice(0, MAX_ENTRY_TITLE_CHARS);
+}
+
+function createEntryConflictCopy(entry, now = new Date().toISOString(), id = crypto.randomUUID()) {
+  return {
+    ...entry,
+    id,
+    title: conflictCopyTitle(entry),
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: undefined,
+  };
+}
+
+function shouldPreserveDirtyEntry(local, remote, dirtyEntryIds) {
+  return Boolean(
+    local
+    && !local.deletedAt
+    && Array.isArray(dirtyEntryIds)
+    && dirtyEntryIds.includes(local.id)
+    && incomingWins(local, remote)
+  );
+}
+
 function remoteEntryToLocal(entry, localEntry = null) {
   const preserveLocalAttachmentMetadata = state.cloud.attachmentsSupported === false && localEntry;
   const payload = preserveLocalAttachmentMetadata
@@ -3123,14 +3285,26 @@ function remotePeriodToLocal(summary) {
   };
 }
 
-function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = [], tasks = [] }) {
+function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = [], tasks = [] }, options = {}) {
+  const preserveDirtyEntryConflicts = options.preserveDirtyEntryConflicts !== false;
+  const dirtyEntryIds = [...cloudDirty('entries')];
+  let conflictCount = 0;
   const entryMap = new Map(state.data.entries.map((entry) => [entry.id, entry]));
   entries.forEach((remoteRecord) => {
     const local = entryMap.get(remoteRecord.id);
     const remote = remoteEntryToLocal(remoteRecord, local);
-    if (!local || incomingWins(local, remote)) entryMap.set(remote.id, remote);
+    if (!local || !incomingWins(local, remote)) return;
+    if (preserveDirtyEntryConflicts && shouldPreserveDirtyEntry(local, remote, dirtyEntryIds)) {
+      const conflictCopy = createEntryConflictCopy(local);
+      entryMap.set(conflictCopy.id, conflictCopy);
+      clearCloudDirty('entries', [local.id]);
+      markCloudDirty('entries', conflictCopy.id);
+      conflictCount += 1;
+    }
+    entryMap.set(remote.id, remote);
   });
   state.data.entries = [...entryMap.values()];
+  if (conflictCount) recordCloudActivity(`检测到 ${conflictCount} 条跨设备修改冲突，已保留为“同步冲突副本”`, 'info');
 
   dailySummaries.forEach((remoteRecord) => {
     const remote = remoteSummaryToLocal(remoteRecord);
@@ -3321,7 +3495,7 @@ async function pushCloudChanges() {
       headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify(entries.map((entry) => entryToCloud(entry, userId))),
     });
-    mergeRemoteData({ entries: saved || [] });
+    mergeRemoteData({ entries: saved || [] }, { preserveDirtyEntryConflicts: false });
   }
   clearCloudDirty('entries', entryIds);
 
@@ -3395,6 +3569,7 @@ async function syncCloud({ quiet = false } = {}) {
       }
       await pullCloudData();
       await pushCloudChanges();
+      state.cloud.lastError = '';
       persistData({ queue: false });
       render();
       renderCloudDialogs();
@@ -3403,10 +3578,12 @@ async function syncCloud({ quiet = false } = {}) {
         showToast('云端内容已同步');
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      const isNewError = state.cloud.lastError !== message;
+      state.cloud.lastError = message;
+      if (!quiet || isNewError) recordCloudActivity(`同步失败：${message}`, 'error');
       renderCloudSyncDialog();
       if (!quiet) {
-        const message = error instanceof Error ? error.message : '未知错误';
-        recordCloudActivity(`同步失败：${message}`, 'error');
         showToast(message.includes('stale update')
           ? '检测到另一台设备的较新版本：已停止上传以防覆盖，请先导出本机内容后刷新同步。'
           : `同步失败：${message}`);
@@ -3803,6 +3980,7 @@ function bindEvents() {
     event.preventDefault();
     saveEntryDetail();
   });
+  elements.deleteEntryDetail?.addEventListener('click', deleteEntryDetail);
   elements.draftLibraryButton.addEventListener('click', openDraftLibrary);
   elements.closeDraftLibraryDialog.addEventListener('click', closeDraftLibrary);
   closeDialogOnBackdrop(elements.periodSummaryDialog, closePeriodSummaryDialog);
@@ -3861,6 +4039,7 @@ function bindEvents() {
     elements.searchInput.value = ''; elements.searchStartDate.value = ''; elements.searchEndDate.value = ''; elements.searchTagFilter.value = ''; elements.searchMoodFilter.value = ''; elements.searchHasAttachment.checked = false; renderSearchResults();
   });
   elements.exportButton.addEventListener('click', exportData);
+  elements.importButton?.addEventListener('click', () => elements.importInput.click());
   elements.importInput.addEventListener('change', (event) => {
     const [file] = event.target.files;
     if (file) importData(file);

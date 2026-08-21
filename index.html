@@ -32,7 +32,7 @@
             <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="export-button" class="top-text-action" type="button">导出</button>
             <span class="top-tool-divider" aria-hidden="true"></span>
-            <label class="top-text-action import-label" for="import-input">导入</label>
+            <button id="import-button" class="top-text-action import-button" type="button" aria-controls="import-input">导入</button>
             <input id="import-input" type="file" accept="application/json,.json" hidden />
             <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="backup-panel-button" class="top-text-action" type="button">备份</button>
@@ -215,6 +215,7 @@
         <label>日记内容<textarea id="entry-detail-content" rows="11" maxlength="10000" required></textarea></label>
         <p id="entry-detail-attachment-note" class="entry-detail-attachment-note"></p>
         <div class="dialog-actions">
+          <button id="delete-entry-detail" type="button" class="quiet-button danger-button">删除这条记录</button>
           <button id="cancel-entry-detail" type="button" class="quiet-button">取消</button>
           <button id="save-entry-detail" type="submit" class="primary-button">保存修改</button>
         </div>
