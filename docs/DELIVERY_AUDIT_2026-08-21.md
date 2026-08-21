@@ -45,6 +45,7 @@ flowchart LR
 | P1 | 详情页无删除入口；导入无法被键盘聚焦 | 详情新增删除按钮；导入改为 `button` 触发隐藏文件输入 | UI 可访问性回归、浏览器 Tab 验证 |
 | P1 | 320px 页面溢出，Google Fonts 被 CSP 拦截 | 修正响应式宽度，改为系统字体 | 320px 视觉验证、控制台零错误 |
 | P2 | 发布脚本变更可绕过 Android 版本递增 | Actions guard 覆盖 `android/`、构建脚本、Capacitor、依赖和 `scripts/` | `tests/release-guard-regression.mjs` |
+| P2 | 仅 main 推送会跑测试，合并前缺少预检 | 新增只读 `ci.yml`，在 PR 和非 main 分支推送运行 check/test | GitHub Actions 工作流与回归检查 |
 
 ## 待完成的外部动作与回滚
 
@@ -65,7 +66,7 @@ flowchart LR
 
 - **自己稳定使用**：本地功能已达标；建议每次重要记录后导出 JSON/ZIP 备份。
 - **少量用户试用**：先完成 schema 迁移、真实注册/登录/同步、两台设备冲突和 Android 升级验证。
-- **公开发布**：在上述基础上，使用长期保存且受控的正式签名身份，新增 PR CI 预检、监控/错误收集、Storage 垃圾清理策略与隐私说明。
+- **公开发布**：在上述基础上，使用长期保存且受控的正式签名身份、监控/错误收集、Storage 垃圾清理策略与隐私说明。
 
 ## 本次验证命令
 
