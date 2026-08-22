@@ -1,9 +1,9 @@
-const STORAGE_KEY = 'suijian-calendar-journal-v1';
-const DRAFT_PREFIX = 'suijian-draft-';
+const ACCOUNT_DATA_PREFIX = 'suijian-calendar-journal-account-v2:';
+const ACCOUNT_DRAFT_PREFIX = 'suijian-draft-account-v2:';
 const AI_CONFIG_KEY = 'suijian-ai-config-v1';
 const CLOUD_CONFIG_KEY = 'suijian-supabase-config-v1';
 const CLOUD_SESSION_KEY = 'suijian-supabase-session-v1';
-const CLOUD_ACTIVITY_KEY = 'suijian-cloud-activity-v1';
+const ACCOUNT_CLOUD_ACTIVITY_PREFIX = 'suijian-cloud-activity-v2:';
 const DEFAULT_SUPABASE_URL = 'https://ekotpodfgbkcykfcewmc.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_3TEgVHOwGufdfu_DHcvGLg_XD0tXovA';
 const MAX_PERIOD_INPUT_CHARS = 60000;
@@ -137,15 +137,17 @@ const LEGACY_ORGANIZE_PROMPTS = new Set([
 const dateFormatter = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
 
+const initialCloudSession = loadCloudSession();
+
 const state = {
-  data: loadData(),
+  data: loadData(initialCloudSession?.user?.id),
   activeDate: localDateKey(),
   view: 'today',
   visibleMonth: startOfMonth(new Date()),
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, lastError: '' },
+  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, lastError: '' },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -157,6 +159,11 @@ const state = {
 };
 
 const elements = {
+  appShell: document.querySelector('.app-shell'),
+  topActions: document.querySelector('.top-actions'),
+  authGate: document.querySelector('#auth-gate'),
+  authGateLogin: document.querySelector('#auth-gate-login'),
+  journalWorkspace: document.querySelector('#journal-workspace'),
   views: document.querySelectorAll('.view'),
   navLinks: document.querySelectorAll('.nav-link'),
   dateLabel: document.querySelector('#date-label'),
@@ -338,9 +345,38 @@ function emptyCloudMeta() {
   return { accountId: '', dirty: { entries: [], dailySummaries: [], periodSummaries: [], tasks: [] } };
 }
 
-function loadCloudActivity() {
+function emptyJournalData() {
+  return { entries: [], summaries: {}, periodSummaries: [], tasks: [], cloudSync: emptyCloudMeta() };
+}
+
+function validJournalAccountId(userId) {
+  return typeof userId === 'string' && userId.trim().length > 0 ? userId.trim() : '';
+}
+
+function journalDataStorageKey(userId) {
+  const accountId = validJournalAccountId(userId);
+  return accountId ? `${ACCOUNT_DATA_PREFIX}${accountId}` : '';
+}
+
+function accountDraftPrefix(userId) {
+  const accountId = validJournalAccountId(userId);
+  return accountId ? `${ACCOUNT_DRAFT_PREFIX}${accountId}:` : '';
+}
+
+function accountCloudActivityKey(userId) {
+  const accountId = validJournalAccountId(userId);
+  return accountId ? `${ACCOUNT_CLOUD_ACTIVITY_PREFIX}${accountId}` : '';
+}
+
+function activeJournalAccountId() {
+  return validJournalAccountId(state.cloud?.session?.user?.id);
+}
+
+function loadCloudActivity(userId) {
+  const storageKey = accountCloudActivityKey(userId);
+  if (!storageKey) return [];
   try {
-    const value = JSON.parse(localStorage.getItem(CLOUD_ACTIVITY_KEY));
+    const value = JSON.parse(localStorage.getItem(storageKey));
     if (!Array.isArray(value)) return [];
     return value
       .filter((item) => item && typeof item.message === 'string' && typeof item.at === 'string')
@@ -351,8 +387,10 @@ function loadCloudActivity() {
 }
 
 function persistCloudActivity() {
+  const storageKey = accountCloudActivityKey(activeJournalAccountId());
+  if (!storageKey) return;
   try {
-    localStorage.setItem(CLOUD_ACTIVITY_KEY, JSON.stringify(state.cloud.activity));
+    localStorage.setItem(storageKey, JSON.stringify(state.cloud.activity));
   } catch {
     // Account activity is supplementary; journal persistence stays independent.
   }
@@ -367,7 +405,8 @@ function recordCloudActivity(message, type = 'info') {
 
 function clearCloudActivity() {
   state.cloud.activity = [];
-  localStorage.removeItem(CLOUD_ACTIVITY_KEY);
+  const storageKey = accountCloudActivityKey(activeJournalAccountId());
+  if (storageKey) localStorage.removeItem(storageKey);
   renderCloudActivity();
 }
 
@@ -407,25 +446,34 @@ function normalizeCloudMeta(value) {
   };
 }
 
-function loadData() {
+function loadData(userId) {
+  const accountId = validJournalAccountId(userId);
+  const storageKey = journalDataStorageKey(accountId);
+  if (!storageKey) return emptyJournalData();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : { entries: [], summaries: {}, periodSummaries: [] };
-    return {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : emptyJournalData();
+    const data = {
       entries: Array.isArray(parsed.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments), tags: normalizeTags(entry?.tags), mood: normalizeMood(entry?.mood) })) : [],
       summaries: parsed.summaries && typeof parsed.summaries === 'object' ? parsed.summaries : {},
       periodSummaries: Array.isArray(parsed.periodSummaries) ? parsed.periodSummaries : [],
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks.map(normalizeJournalTask).filter(Boolean) : [],
       cloudSync: normalizeCloudMeta(parsed.cloudSync),
     };
+    // A cache is keyed by account and must also carry the same owner marker.
+    if (data.cloudSync.accountId && data.cloudSync.accountId !== accountId) return emptyJournalData();
+    data.cloudSync.accountId = accountId;
+    return data;
   } catch {
-    return { entries: [], summaries: {}, periodSummaries: [], tasks: [], cloudSync: emptyCloudMeta() };
+    return emptyJournalData();
   }
 }
 
 function persistData({ queue = true } = {}) {
+  const storageKey = journalDataStorageKey(activeJournalAccountId());
+  if (!storageKey) return false;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    localStorage.setItem(storageKey, JSON.stringify(state.data));
   } catch (error) {
     console.error('Failed to persist journal data', error);
     showToast('本地存储空间不足，未保存本次更改；请先导出并清理浏览器空间');
@@ -435,6 +483,47 @@ function persistData({ queue = true } = {}) {
   scheduleAutomaticBackup();
   if (queue) queueCloudSync();
   return true;
+}
+
+function activateJournalAccount(userId) {
+  const accountId = validJournalAccountId(userId);
+  if (!accountId) {
+    clearJournalAccount();
+    return false;
+  }
+  state.data = loadData(accountId);
+  state.cloud.activity = loadCloudActivity(accountId);
+  state.cloud.lastError = '';
+  state.cloud.attachmentsSupported = null;
+  state.cloud.tasksSupported = null;
+  state.cloud.backupsSupported = null;
+  state.pastedDraft = null;
+  state.editingEntryId = '';
+  return true;
+}
+
+function clearJournalAccount() {
+  clearTimeout(draftTimer);
+  clearTimeout(state.cloud.syncTimer);
+  clearTimeout(state.backup.timer);
+  state.data = emptyJournalData();
+  state.cloud.activity = [];
+  state.cloud.lastError = '';
+  state.cloud.attachmentsSupported = null;
+  state.cloud.tasksSupported = null;
+  state.cloud.backupsSupported = null;
+  state.pastedDraft = null;
+  state.editingEntryId = '';
+}
+
+function renderJournalAccess() {
+  const locked = !activeJournalAccountId();
+  elements.authGate.hidden = !locked;
+  elements.journalWorkspace.hidden = locked;
+  elements.appShell.classList.toggle('auth-required', locked);
+  elements.topActions.classList.toggle('auth-required', locked);
+  if (locked) elements.syncStatus.textContent = '请先登录';
+  return locked;
 }
 
 function persistDataChange(change, options) {
@@ -580,7 +669,8 @@ function cloudAttachmentPayload(entry) {
 }
 
 function draftKey() {
-  return `${DRAFT_PREFIX}${state.activeDate}`;
+  const prefix = accountDraftPrefix(activeJournalAccountId());
+  return prefix ? `${prefix}${state.activeDate}` : '';
 }
 
 function emptyDraft() {
@@ -605,6 +695,7 @@ function normalizeDraft(value) {
 }
 
 function readDraft(storageKey) {
+  if (!storageKey) return emptyDraft();
   try {
     const raw = localStorage.getItem(storageKey);
     return raw ? normalizeDraft(JSON.parse(raw)) : emptyDraft();
@@ -627,11 +718,13 @@ function draftHasContent(draft) {
 
 function savedDrafts() {
   const drafts = [];
+  const prefix = accountDraftPrefix(activeJournalAccountId());
+  if (!prefix) return drafts;
   try {
     for (let index = 0; index < localStorage.length; index += 1) {
       const storageKey = localStorage.key(index);
-      if (!storageKey?.startsWith(DRAFT_PREFIX)) continue;
-      const date = storageKey.slice(DRAFT_PREFIX.length);
+      if (!storageKey?.startsWith(prefix)) continue;
+      const date = storageKey.slice(prefix.length);
       if (!isDateKey(date)) continue;
       const draft = readDraft(storageKey);
       if (!draftHasContent(draft)) continue;
@@ -1290,9 +1383,11 @@ async function initializeWritingReminders() {
 
 
 function saveDraftObject(draft, message = '草稿已保存') {
+  const storageKey = draftKey();
+  if (!storageKey) return;
   state.pastedDraft = null;
   const normalizedDraft = normalizeDraft({ ...draft, updatedAt: new Date().toISOString() });
-  localStorage.setItem(draftKey(), JSON.stringify(normalizedDraft));
+  localStorage.setItem(storageKey, JSON.stringify(normalizedDraft));
   elements.draftStatus.textContent = message;
   updateWordCount();
   updateDraftLibraryButton();
@@ -1609,14 +1704,17 @@ function renderEntryAttachments(attachments) {
 }
 
 function scheduleAutomaticBackup() {
+  if (!activeJournalAccountId()) return;
   clearTimeout(state.backup.timer);
   state.backup.timer = window.setTimeout(() => { void saveAutomaticBackup(); }, AUTO_BACKUP_DELAY_MS);
 }
 
 function saveAutomaticBackup() {
-  if (!('indexedDB' in window)) return Promise.resolve(false);
+  const accountId = activeJournalAccountId();
+  if (!accountId || !('indexedDB' in window)) return Promise.resolve(false);
   const snapshot = {
     id: `${new Date().toISOString()}-${crypto.randomUUID()}`,
+    accountId,
     backedUpAt: new Date().toISOString(),
     data: structuredClone(state.data),
   };
@@ -1631,9 +1729,13 @@ function saveAutomaticBackup() {
       const transaction = database.transaction(AUTO_BACKUP_STORE, 'readwrite');
       const store = transaction.objectStore(AUTO_BACKUP_STORE);
       store.put(snapshot);
-      const keys = store.getAllKeys();
-      keys.addEventListener('success', () => {
-        keys.result.sort().slice(0, -AUTO_BACKUP_SNAPSHOT_COUNT).forEach((key) => store.delete(key));
+      const snapshots = store.getAll();
+      snapshots.addEventListener('success', () => {
+        snapshots.result
+          .filter((item) => item?.accountId === accountId)
+          .sort((first, second) => String(second.backedUpAt).localeCompare(String(first.backedUpAt)))
+          .slice(AUTO_BACKUP_SNAPSHOT_COUNT)
+          .forEach((item) => store.delete(item.id));
       });
       transaction.addEventListener('complete', () => { database.close(); resolve(true); });
       transaction.addEventListener('abort', () => { database.close(); resolve(false); });
@@ -1734,6 +1836,7 @@ async function saveDailyCloudBackup(userId) {
 
 
 function render() {
+  if (renderJournalAccess()) return;
   refreshJournalTagOptions();
   renderToday();
   renderCalendar();
@@ -2770,9 +2873,13 @@ function automaticBackupRequest(mode, action) {
 }
 
 async function listAutomaticBackups() {
+  const accountId = activeJournalAccountId();
+  if (!accountId) return [];
   try {
     const value = await automaticBackupRequest('readonly', (store) => store.getAll());
-    return Array.isArray(value) ? value.sort((first, second) => String(second.backedUpAt).localeCompare(String(first.backedUpAt))) : [];
+    return Array.isArray(value)
+      ? value.filter((item) => item?.accountId === accountId).sort((first, second) => String(second.backedUpAt).localeCompare(String(first.backedUpAt)))
+      : [];
   } catch { return []; }
 }
 
@@ -3128,7 +3235,7 @@ function renderCloudAccountDialog() {
   elements.accountDialogCopy.textContent = session
     ? '同一邮箱登录手机和电脑后，日记会自动合并到这个账号。'
     : '注册一个账号后，即可把日记同步到其他设备。';
-  elements.cloudAccountButton.textContent = '账号';
+  elements.cloudAccountButton.textContent = session ? '账号' : '登录';
   elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
 }
 
@@ -3281,6 +3388,7 @@ async function restoreCloudSessionFromAuthCallback() {
     const session = sessionFromAuthCallback(params, user);
     if (!session) throw new Error('邮箱验证返回的数据不完整');
     storeCloudSession(session);
+    activateJournalAccount(session.user.id);
     recordCloudActivity('邮箱验证成功，已登录同步账号', 'success');
     render();
     renderCloudDialogs();
@@ -3323,6 +3431,8 @@ async function refreshCloudSession() {
     if ([400, 401, 403].includes(error?.status)) {
       storeCloudSession(null);
       stopCloudAutoSync();
+      clearJournalAccount();
+      render();
       renderCloudDialogs();
     }
     throw error;
@@ -3742,14 +3852,7 @@ async function syncCloud({ quiet = false } = {}) {
       const meta = state.data.cloudSync ?? (state.data.cloudSync = emptyCloudMeta());
       if (meta.accountId !== session.user.id) {
         if (meta.accountId) {
-          if (quiet) return;
-          const approved = window.confirm(
-            '检测到设备上保留着另一个同步账号的数据。为防止日记串号，默认不会上传。\n\n确认后，当前本地日记会合并并上传到新账号；取消则保持本地数据不变，建议先导出备份。'
-          );
-          if (!approved) {
-            renderCloudSyncDialog();
-            return;
-          }
+          throw new Error('检测到账号缓存不一致，已隔离本机数据；请退出后重新登录。');
         }
         meta.accountId = session.user.id;
         markAllCloudDirty();
@@ -3823,6 +3926,7 @@ async function signInCloud() {
     const session = sessionFromPayload(payload);
     if (!session) throw new Error('登录结果缺少会话信息');
     storeCloudSession(session);
+    activateJournalAccount(session.user.id);
     startCloudAutoSync();
     elements.syncPassword.value = '';
     recordCloudActivity('登录成功', 'success');
@@ -3850,6 +3954,7 @@ async function signUpCloud() {
     const session = sessionFromPayload(payload);
     if (session) {
       storeCloudSession(session);
+      activateJournalAccount(session.user.id);
       startCloudAutoSync();
       elements.syncPassword.value = '';
       recordCloudActivity('注册并登录成功', 'success');
@@ -3883,11 +3988,13 @@ async function signOutCloud() {
       });
     }
   } finally {
+    recordCloudActivity('已退出同步账号', 'info');
     storeCloudSession(null);
     stopCloudAutoSync();
-    recordCloudActivity('已退出同步账号', 'info');
+    clearJournalAccount();
+    render();
     renderCloudDialogs();
-    showToast('已退出同步账号，本地日记仍保留');
+    showToast('已退出账号，请登录后查看日记');
   }
 }
 
@@ -4126,6 +4233,7 @@ function bindEvents() {
   elements.backupExportZip.addEventListener('click', () => void exportZipBackup());
   elements.cloudSyncButton.addEventListener('click', handleCloudSyncButton);
   elements.cloudAccountButton.addEventListener('click', openCloudAccountDialog);
+  elements.authGateLogin.addEventListener('click', openCloudAccountDialog);
   elements.closeAccountDialog.addEventListener('click', closeCloudAccountDialog);
   elements.checkMobileUpdate.addEventListener('click', () => void checkMobileUpdatesManually());
   elements.downloadMobileUpdate.addEventListener('click', openNativeInstallerDownload);
@@ -4294,5 +4402,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260813-open-auto-update'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260822-account-login-gate'));
 }
