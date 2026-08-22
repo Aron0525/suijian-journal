@@ -24,6 +24,8 @@ const AUTO_BACKUP_DB = 'suijian-auto-backups-v1';
 const AUTO_BACKUP_STORE = 'recovery-snapshots';
 const AUTO_BACKUP_SNAPSHOT_COUNT = 3;
 const AUTO_BACKUP_DELAY_MS = 800;
+const CLOUD_DAILY_BACKUP_PREFIX = 'suijian-cloud-daily-backup-v1:';
+const CLOUD_DAILY_BACKUP_RETENTION_DAYS = 14;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_TAGS = 8;
 const MAX_ENTRY_TAG_CHARS = 18;
@@ -89,7 +91,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, lastError: '' },
+  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, lastError: '' },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -206,6 +208,7 @@ const elements = {
   closeBackupDialog: document.querySelector('#close-backup-dialog'),
   backupSnapshotList: document.querySelector('#backup-snapshot-list'),
   backupStatus: document.querySelector('#backup-status'),
+  cloudDailyBackupStatus: document.querySelector('#cloud-daily-backup-status'),
   backupExportJson: document.querySelector('#backup-export-json'),
   backupExportMarkdown: document.querySelector('#backup-export-markdown'),
   backupExportZip: document.querySelector('#backup-export-zip'),
@@ -1586,6 +1589,96 @@ function saveAutomaticBackup() {
   });
 }
 
+function dailyCloudBackupMarkerKey(userId) {
+  return `${CLOUD_DAILY_BACKUP_PREFIX}${userId}`;
+}
+
+function savedDailyCloudBackupDate(userId) {
+  try {
+    return localStorage.getItem(dailyCloudBackupMarkerKey(userId)) || '';
+  } catch {
+    return '';
+  }
+}
+
+function saveDailyCloudBackupDate(userId, date) {
+  try {
+    localStorage.setItem(dailyCloudBackupMarkerKey(userId), date);
+  } catch {
+    // A full browser storage quota must not prevent normal journal sync.
+  }
+}
+
+function dailyCloudBackupCutoffDate(now = new Date()) {
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - CLOUD_DAILY_BACKUP_RETENTION_DAYS + 1);
+  return localDateKey(cutoff);
+}
+
+function cloudDailyBackupPayload() {
+  return {
+    version: 1,
+    backedUpAt: new Date().toISOString(),
+    data: structuredClone(state.data),
+  };
+}
+
+function dailyCloudBackupStatus() {
+  const session = state.cloud.session;
+  if (!session) return '登录后自动启用';
+  if (state.cloud.backupsSupported === false) return '等待云端数据库迁移';
+  return savedDailyCloudBackupDate(session.user.id) === localDateKey()
+    ? `今日 ${localDateKey()} 已备份`
+    : '将在本次同步后自动备份';
+}
+
+async function pruneDailyCloudBackups() {
+  const cutoff = dailyCloudBackupCutoffDate();
+  await cloudRequest(`/rest/v1/journal_backups?backup_date=lt.${encodeURIComponent(cutoff)}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' },
+  });
+}
+
+async function saveDailyCloudBackup(userId) {
+  if (!userId || state.cloud.backupsSupported === false) return false;
+  const backupDate = localDateKey();
+  if (savedDailyCloudBackupDate(userId) === backupDate) return false;
+  try {
+    const saved = await cloudRequest('/rest/v1/journal_backups?on_conflict=user_id,backup_date', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=ignore-duplicates,return=representation',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        backup_date: backupDate,
+        payload: cloudDailyBackupPayload(),
+      }),
+    });
+    state.cloud.backupsSupported = true;
+    saveDailyCloudBackupDate(userId, backupDate);
+    try {
+      await pruneDailyCloudBackups();
+    } catch {
+      // Retention cleanup may retry on the next daily backup without risking the new snapshot.
+    }
+    if (Array.isArray(saved) && saved.length) recordCloudActivity(`云端每日备份已创建（${backupDate}）`, 'success');
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    if (isMissingCloudBackupsTable(error)) {
+      const wasUnsupported = state.cloud.backupsSupported === false;
+      state.cloud.backupsSupported = false;
+      if (!wasUnsupported) recordCloudActivity('云端每日备份等待数据库迁移', 'info');
+      return false;
+    }
+    recordCloudActivity(`云端每日备份失败：${message}`, 'error');
+    return false;
+  }
+}
+
 
 function render() {
   refreshJournalTagOptions();
@@ -2611,6 +2704,7 @@ async function restoreAutomaticBackup(id) {
 
 async function renderBackupSnapshots() {
   const snapshots = await listAutomaticBackups();
+  elements.cloudDailyBackupStatus.textContent = dailyCloudBackupStatus();
   elements.backupSnapshotList.replaceChildren();
   elements.backupStatus.textContent = snapshots.length ? `保留 ${snapshots.length} 份` : '暂无快照';
   if (!snapshots.length) {
@@ -3398,6 +3492,11 @@ function isMissingCloudAttachmentsColumn(error) {
   return message.includes('column journal_entries.attachments does not exist');
 }
 
+function isMissingCloudBackupsTable(error) {
+  const message = error instanceof Error ? error.message : '';
+  return /journal_backups|PGRST205/i.test(message);
+}
+
 function entryToCloud(entry, userId) {
   const payload = {
     id: entry.id,
@@ -3569,6 +3668,7 @@ async function syncCloud({ quiet = false } = {}) {
       }
       await pullCloudData();
       await pushCloudChanges();
+      await saveDailyCloudBackup(session.user.id);
       state.cloud.lastError = '';
       persistData({ queue: false });
       render();

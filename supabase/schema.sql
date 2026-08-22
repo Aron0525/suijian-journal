@@ -160,6 +160,38 @@ for all to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
+-- One immutable user-visible recovery snapshot is kept for each active day.
+-- The client creates it after that day's first completed sync and prunes rows
+-- older than 14 days. This remains separate from the live journal tables, so
+-- an accidental delete or a later edit does not alter an earlier daily copy.
+create table if not exists public.journal_backups (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  backup_date date not null,
+  payload jsonb not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, backup_date)
+);
+
+create index if not exists journal_backups_user_date_idx
+  on public.journal_backups (user_id, backup_date desc);
+
+alter table public.journal_backups enable row level security;
+revoke update on table public.journal_backups from authenticated;
+grant select, insert, delete on table public.journal_backups to authenticated;
+drop policy if exists "read own journal backups" on public.journal_backups;
+drop policy if exists "insert own journal backups" on public.journal_backups;
+drop policy if exists "delete own journal backups" on public.journal_backups;
+create policy "read own journal backups" on public.journal_backups
+for select to authenticated
+using (auth.uid() = user_id);
+create policy "insert own journal backups" on public.journal_backups
+for insert to authenticated
+with check (auth.uid() = user_id);
+create policy "delete own journal backups" on public.journal_backups
+for delete to authenticated
+using (auth.uid() = user_id);
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'journal-attachments',
