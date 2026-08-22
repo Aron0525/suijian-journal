@@ -22,3 +22,6 @@ supabase/.env*
 *.pem
 *.key
 android-signing.env
+android/signing.properties
+signing.properties
+android/app/google-services.json

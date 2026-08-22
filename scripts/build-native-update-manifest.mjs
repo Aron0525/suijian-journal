@@ -10,7 +10,9 @@ function option(name, fallback = '') {
   return index === -1 ? fallback : args[index + 1] || fallback;
 }
 
-const apkPath = resolve(option('--apk', '岁笺-Android-v1.1.0.apk'));
+const apkInput = option('--apk');
+if (!apkInput) throw new Error('缺少 --apk 参数；请传入已构建的 Android 安装包路径');
+const apkPath = resolve(apkInput);
 const outputPath = resolve(option('--output', 'dist-mobile'));
 const pagesBaseUrl = option('--base-url', DEFAULT_BASE_URL).replace(/\/$/, '');
 const version = JSON.parse(await readFile(new URL('../mobile-version.json', import.meta.url), 'utf8'));

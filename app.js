@@ -24,6 +24,8 @@ const AUTO_BACKUP_DB = 'suijian-auto-backups-v1';
 const AUTO_BACKUP_STORE = 'recovery-snapshots';
 const AUTO_BACKUP_SNAPSHOT_COUNT = 3;
 const AUTO_BACKUP_DELAY_MS = 800;
+const CLOUD_DAILY_BACKUP_PREFIX = 'suijian-cloud-daily-backup-v1:';
+const CLOUD_DAILY_BACKUP_RETENTION_DAYS = 14;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_TAGS = 8;
 const MAX_ENTRY_TAG_CHARS = 18;
@@ -31,7 +33,6 @@ const JOURNAL_MOODS = Object.freeze(['舒展', '平静', '充实', '开心', '�
 const JOURNAL_ATTACHMENT_BUCKET = 'journal-attachments';
 const MAX_ENTRY_CONTENT_CHARS = 10000;
 const MAX_SUMMARY_CHARS = 60000;
-const SESSION_REMEMBER_MS = 2 * 24 * 60 * 60 * 1000;
 const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const MOBILE_OTA_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/app-update.json';
 const MOBILE_OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -39,6 +40,61 @@ const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://aron0525.github.io/suijian-journ
 const REMINDER_SETTINGS_KEY = 'suijian-writing-reminder-v1';
 const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7], skipDate: '', snoozedUntil: '' });
 let runtimeAiApiKey = '';
+const AI_API_STYLES = Object.freeze({
+  OPENAI_COMPATIBLE: 'openai-compatible',
+  AZURE_OPENAI: 'azure-openai',
+});
+const AI_PROVIDER_PRESETS = Object.freeze({
+  deepseek: Object.freeze({
+    label: 'DeepSeek',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.deepseek.com',
+    model: 'deepseek-v4-flash',
+    description: 'DeepSeek 的 Chat Completions 接口；已预填官方地址与适合日记处理的 Flash 模型。',
+  }),
+  'openai-compatible': Object.freeze({
+    label: 'OpenAI 兼容 API',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: '',
+    model: '',
+    description: '适用于 OpenAI 与提供 Chat Completions 兼容接口的平台，例如 SiliconFlow。填写该平台的基础地址和模型 ID。',
+  }),
+  'azure-openai': Object.freeze({
+    label: 'Azure OpenAI',
+    apiStyle: AI_API_STYLES.AZURE_OPENAI,
+    endpoint: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+    model: 'YOUR-DEPLOYMENT-NAME',
+    description: '使用 Azure OpenAI 的 OpenAI v1 地址；模型名称填写 Azure 中已部署的 deployment 名称，代理会改用 api-key 请求头。',
+  }),
+  qwen: Object.freeze({
+    label: '千问 Qwen',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus',
+    description: '百炼 OpenAI 兼容接口；已预填 Qwen Plus。若使用工作空间或其他地域，可直接改为服务商提供的基础地址。',
+  }),
+  kimi: Object.freeze({
+    label: 'Kimi',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k2.6',
+    description: 'Kimi 开放平台的 OpenAI 兼容接口；已预填 Kimi K2.6。',
+  }),
+  minimax: Object.freeze({
+    label: 'MiniMax',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.minimax.io/v1',
+    model: 'MiniMax-M2.7',
+    description: 'MiniMax 的 OpenAI 兼容接口；已预填 MiniMax-M2.7。',
+  }),
+  glm: Object.freeze({
+    label: '智谱 GLM',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.z.ai/api/paas/v4',
+    model: 'glm-5.1',
+    description: '智谱 Z.AI 的 OpenAI 兼容接口；已预填 GLM-5.1。',
+  }),
+});
 const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
 要求：
@@ -89,7 +145,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null },
+  cloud: { session: loadCloudSession(), activity: loadCloudActivity(), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, lastError: '' },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -119,6 +175,7 @@ const elements = {
   entryDetailContent: document.querySelector('#entry-detail-content'),
   entryDetailAttachmentNote: document.querySelector('#entry-detail-attachment-note'),
   cancelEntryDetail: document.querySelector('#cancel-entry-detail'),
+  deleteEntryDetail: document.querySelector('#delete-entry-detail'),
   journalTagOptions: document.querySelector('#journal-tag-options'),
   entryContent: document.querySelector('#entry-content'),
   wordCount: document.querySelector('#word-count'),
@@ -205,6 +262,7 @@ const elements = {
   closeBackupDialog: document.querySelector('#close-backup-dialog'),
   backupSnapshotList: document.querySelector('#backup-snapshot-list'),
   backupStatus: document.querySelector('#backup-status'),
+  cloudDailyBackupStatus: document.querySelector('#cloud-daily-backup-status'),
   backupExportJson: document.querySelector('#backup-export-json'),
   backupExportMarkdown: document.querySelector('#backup-export-markdown'),
   backupExportZip: document.querySelector('#backup-export-zip'),
@@ -245,19 +303,19 @@ const elements = {
   searchDialog: document.querySelector('#search-dialog'),
   closeSearchDialog: document.querySelector('#close-search-dialog'),
   exportButton: document.querySelector('#export-button'),
+  importButton: document.querySelector('#import-button'),
   importInput: document.querySelector('#import-input'),
   modelConfigButton: document.querySelector('#model-config-button'),
   aiConfigDialog: document.querySelector('#ai-config-dialog'),
   aiConfigForm: document.querySelector('#ai-config-form'),
+  aiProviderPreset: document.querySelector('#ai-provider-preset'),
+  aiProviderDescription: document.querySelector('#ai-provider-description'),
   aiEndpoint: document.querySelector('#ai-endpoint'),
+  aiModelLabel: document.querySelector('#ai-model-label'),
   aiModel: document.querySelector('#ai-model'),
   aiApiKey: document.querySelector('#ai-api-key'),
-  aiOrganizePrompt: document.querySelector('#ai-organize-prompt'),
-  aiOrganizePromptCount: document.querySelector('#ai-organize-prompt-count'),
-  restoreOrganizePrompt: document.querySelector('#restore-organize-prompt'),
-  aiSummaryPrompt: document.querySelector('#ai-summary-prompt'),
-  aiSummaryPromptCount: document.querySelector('#ai-summary-prompt-count'),
-  restoreSummaryPrompt: document.querySelector('#restore-summary-prompt'),
+  openOrganizePromptSettings: document.querySelector('#open-organize-prompt-settings'),
+  openSummaryPromptSettings: document.querySelector('#open-summary-prompt-settings'),
   closeAiConfig: document.querySelector('#close-ai-config'),
   removeAiConfig: document.querySelector('#remove-ai-config'),
   promptEditorDialog: document.querySelector('#prompt-editor-dialog'),
@@ -773,27 +831,108 @@ function normalizeJournalTask(value) {
   return { id: value.id, entryId: value.entryId, sourceKey, text, completed: Boolean(value.completed), createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString(), updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(), ...(typeof value.deletedAt === 'string' ? { deletedAt: value.deletedAt } : {}) };
 }
 
+function tombstoneLinkedTasks(tasks, entryId, now) {
+  return tasks.map((task) => {
+    if (task.entryId !== entryId || task.deletedAt) return task;
+    return { ...task, updatedAt: now, deletedAt: now };
+  });
+}
+
+function tombstoneJournalEntry(entry, now) {
+  entry.deletedAt = now;
+  entry.updatedAt = now;
+  markCloudDirty('entries', entry.id);
+  const deletedTaskIds = state.data.tasks
+    .filter((task) => task.entryId === entry.id && !task.deletedAt)
+    .map((task) => task.id);
+  state.data.tasks = tombstoneLinkedTasks(state.data.tasks, entry.id, now);
+  deletedTaskIds.forEach((id) => markCloudDirty('tasks', id));
+  invalidateDailySummary(entry.date, now);
+}
+
 function extractJournalTasks(entries) {
   const candidates = [];
   entries.forEach((entry) => {
+    if (entry.deletedAt) return;
     const source = `${entry.title || ''}\n${entry.content || ''}`;
     const matches = [...source.matchAll(/(?:待办|TODO|Todo|计划)[：:]\s*([^\n。！？!?]+)/g)];
     matches.forEach((match, matchIndex) => {
       match[1].split(/[、，,；;]/).map((item) => item.trim()).filter((item) => item.length >= 2).slice(0, 5).forEach((text, index) => {
-        candidates.push({ entryId: entry.id, sourceKey: `${entry.id}:${matchIndex}:${index}:${text}`, text: text.slice(0, 180) });
+        candidates.push({ entryId: entry.id, sourceKey: `${entry.id}:${matchIndex}:${index}`, text: text.slice(0, 180) });
       });
     });
   });
   return candidates;
 }
 
+function taskSourceSlot(sourceKey) {
+  return String(sourceKey || '').split(':').slice(0, 3).join(':');
+}
+
+function taskCreatedAt(task) {
+  const value = Date.parse(task?.createdAt || '');
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function reconcileJournalTasks(tasks, entries, now = new Date().toISOString()) {
+  const nextTasks = [...tasks];
+  const changedTaskIds = [];
+  const removedTaskIds = [];
+  const markChanged = (task) => {
+    if (!changedTaskIds.includes(task.id)) changedTaskIds.push(task.id);
+  };
+
+  extractJournalTasks(entries).forEach((candidate) => {
+    const matchingIndexes = nextTasks
+      .map((task, index) => ({ task, index }))
+      .filter(({ task }) => task.entryId === candidate.entryId && taskSourceSlot(task.sourceKey) === candidate.sourceKey)
+      .sort((first, second) => taskCreatedAt(first.task) - taskCreatedAt(second.task) || first.index - second.index);
+
+    if (!matchingIndexes.length) {
+      const task = { ...candidate, id: crypto.randomUUID(), completed: false, createdAt: now, updatedAt: now };
+      nextTasks.push(task);
+      markChanged(task);
+      return;
+    }
+
+    const primary = matchingIndexes[0].task;
+    if (primary.text !== candidate.text || primary.deletedAt) {
+      primary.text = candidate.text;
+      primary.updatedAt = now;
+      delete primary.deletedAt;
+      markChanged(primary);
+    }
+
+    matchingIndexes.slice(1).forEach(({ task }) => {
+      if (task.sourceKey === primary.sourceKey) {
+        const index = nextTasks.indexOf(task);
+        if (index >= 0) nextTasks.splice(index, 1);
+        removedTaskIds.push(task.id);
+        return;
+      }
+      if (!task.deletedAt) {
+        task.updatedAt = now;
+        task.deletedAt = now;
+        markChanged(task);
+      }
+    });
+  });
+
+  return { tasks: nextTasks, changedTaskIds, removedTaskIds };
+}
+
+function reconcileEntryTasks(entries, now = new Date().toISOString()) {
+  const reconciliation = reconcileJournalTasks(state.data.tasks, entries, now);
+  if (!reconciliation.changedTaskIds.length && !reconciliation.removedTaskIds.length) return reconciliation;
+  state.data.tasks = reconciliation.tasks;
+  clearCloudDirty('tasks', reconciliation.removedTaskIds);
+  reconciliation.changedTaskIds.forEach((id) => markCloudDirty('tasks', id));
+  return reconciliation;
+}
+
 function ensureExtractedJournalTasks(entries) {
-  const known = new Set(state.data.tasks.filter((task) => !task.deletedAt).map((task) => task.sourceKey));
-  const now = new Date().toISOString();
-  const additions = extractJournalTasks(entries).filter((task) => !known.has(task.sourceKey)).map((task) => ({ ...task, id: crypto.randomUUID(), completed: false, createdAt: now, updatedAt: now }));
-  if (!additions.length) return;
-  state.data.tasks.push(...additions);
-  additions.forEach((task) => markCloudDirty('tasks', task.id));
+  const reconciliation = reconcileEntryTasks(entries);
+  if (!reconciliation.changedTaskIds.length && !reconciliation.removedTaskIds.length) return;
   persistData();
 }
 
@@ -1503,6 +1642,96 @@ function saveAutomaticBackup() {
   });
 }
 
+function dailyCloudBackupMarkerKey(userId) {
+  return `${CLOUD_DAILY_BACKUP_PREFIX}${userId}`;
+}
+
+function savedDailyCloudBackupDate(userId) {
+  try {
+    return localStorage.getItem(dailyCloudBackupMarkerKey(userId)) || '';
+  } catch {
+    return '';
+  }
+}
+
+function saveDailyCloudBackupDate(userId, date) {
+  try {
+    localStorage.setItem(dailyCloudBackupMarkerKey(userId), date);
+  } catch {
+    // A full browser storage quota must not prevent normal journal sync.
+  }
+}
+
+function dailyCloudBackupCutoffDate(now = new Date()) {
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - CLOUD_DAILY_BACKUP_RETENTION_DAYS + 1);
+  return localDateKey(cutoff);
+}
+
+function cloudDailyBackupPayload() {
+  return {
+    version: 1,
+    backedUpAt: new Date().toISOString(),
+    data: structuredClone(state.data),
+  };
+}
+
+function dailyCloudBackupStatus() {
+  const session = state.cloud.session;
+  if (!session) return '登录后自动启用';
+  if (state.cloud.backupsSupported === false) return '等待云端数据库迁移';
+  return savedDailyCloudBackupDate(session.user.id) === localDateKey()
+    ? `今日 ${localDateKey()} 已备份`
+    : '将在本次同步后自动备份';
+}
+
+async function pruneDailyCloudBackups() {
+  const cutoff = dailyCloudBackupCutoffDate();
+  await cloudRequest(`/rest/v1/journal_backups?backup_date=lt.${encodeURIComponent(cutoff)}`, {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' },
+  });
+}
+
+async function saveDailyCloudBackup(userId) {
+  if (!userId || state.cloud.backupsSupported === false) return false;
+  const backupDate = localDateKey();
+  if (savedDailyCloudBackupDate(userId) === backupDate) return false;
+  try {
+    const saved = await cloudRequest('/rest/v1/journal_backups?on_conflict=user_id,backup_date', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=ignore-duplicates,return=representation',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        backup_date: backupDate,
+        payload: cloudDailyBackupPayload(),
+      }),
+    });
+    state.cloud.backupsSupported = true;
+    saveDailyCloudBackupDate(userId, backupDate);
+    try {
+      await pruneDailyCloudBackups();
+    } catch {
+      // Retention cleanup may retry on the next daily backup without risking the new snapshot.
+    }
+    if (Array.isArray(saved) && saved.length) recordCloudActivity(`云端每日备份已创建（${backupDate}）`, 'success');
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    if (isMissingCloudBackupsTable(error)) {
+      const wasUnsupported = state.cloud.backupsSupported === false;
+      state.cloud.backupsSupported = false;
+      if (!wasUnsupported) recordCloudActivity('云端每日备份等待数据库迁移', 'info');
+      return false;
+    }
+    recordCloudActivity(`云端每日备份失败：${message}`, 'error');
+    return false;
+  }
+}
+
 
 function render() {
   refreshJournalTagOptions();
@@ -1590,18 +1819,7 @@ function renderEntries() {
       fragment.querySelector('.original-content').textContent = entry.originalContent;
     }
 
-    fragment.querySelector('.entry-delete').addEventListener('click', () => {
-      if (!window.confirm('删除这条记录？此操作会立即更新本地数据。')) return;
-      const now = new Date().toISOString();
-      if (!persistDataChange(() => {
-        entry.deletedAt = now;
-        entry.updatedAt = now;
-        markCloudDirty('entries', entry.id);
-        invalidateDailySummary(state.activeDate, now);
-      })) return;
-      render();
-      showToast('记录已删除');
-    });
+    fragment.querySelector('.entry-delete').addEventListener('click', () => deleteJournalEntry(entry.id));
     elements.entryList.append(fragment);
   });
 }
@@ -1912,6 +2130,7 @@ function saveNewEntry() {
     state.data.entries.push(entry);
     markCloudDirty('entries', entry.id);
     invalidateDailySummary(state.activeDate, now);
+    reconcileEntryTasks([entry], now);
   })) return;
   localStorage.removeItem(draftKey());
   state.pastedDraft = null;
@@ -1925,30 +2144,79 @@ function saveNewEntry() {
   showToast('记录已保存');
 }
 
+function aiProviderKeyForConfig(config = {}) {
+  if (AI_PROVIDER_PRESETS[config?.provider]) return config.provider;
+  const endpoint = String(config?.endpoint || '').toLowerCase();
+  if (endpoint.includes('api.deepseek.com')) return 'deepseek';
+  if (endpoint.includes('dashscope.aliyuncs.com') || endpoint.includes('maas.aliyuncs.com')) return 'qwen';
+  if (endpoint.includes('api.moonshot.cn') || endpoint.includes('api.moonshot.ai')) return 'kimi';
+  if (endpoint.includes('api.minimax.io')) return 'minimax';
+  if (endpoint.includes('api.z.ai')) return 'glm';
+  if (endpoint.includes('.openai.azure.com')) return 'azure-openai';
+  return 'openai-compatible';
+}
+
+function normalizeAiConfig(config = {}) {
+  const provider = aiProviderKeyForConfig(config);
+  const preset = AI_PROVIDER_PRESETS[provider];
+  return {
+    ...config,
+    provider,
+    apiStyle: config?.apiStyle === AI_API_STYLES.AZURE_OPENAI || preset.apiStyle === AI_API_STYLES.AZURE_OPENAI
+      ? AI_API_STYLES.AZURE_OPENAI
+      : AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: String(config?.endpoint || '').trim(),
+    model: String(config?.model || '').trim(),
+  };
+}
+
 function readAiConfigDraft() {
   try {
     const config = JSON.parse(localStorage.getItem(AI_CONFIG_KEY));
-    if (!config || typeof config !== 'object') return {};
+    if (!config || typeof config !== 'object') return normalizeAiConfig();
     // Migrate older installations away from storing an API key in localStorage.
     const { apiKey: legacyApiKey, ...safeConfig } = config;
     if (legacyApiKey) localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(safeConfig));
-    return safeConfig;
-  } catch { return {}; }
+    return normalizeAiConfig(safeConfig);
+  } catch { return normalizeAiConfig(); }
+}
+
+function isAiConfigComplete(config) {
+  const endpoint = String(config?.endpoint || '').trim();
+  const model = String(config?.model || '').trim();
+  return Boolean(endpoint && model && !endpoint.includes('YOUR-RESOURCE-NAME') && !model.includes('YOUR-DEPLOYMENT-NAME'));
 }
 
 function getAiConfig() {
   const config = readAiConfigDraft();
-  return config.endpoint && config.model && runtimeAiApiKey ? { ...config, apiKey: runtimeAiApiKey } : null;
+  return isAiConfigComplete(config) && runtimeAiApiKey ? { ...config, apiKey: runtimeAiApiKey } : null;
+}
+
+function updateAiProviderUi(provider = elements.aiProviderPreset.value) {
+  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
+  const isAzure = preset.apiStyle === AI_API_STYLES.AZURE_OPENAI;
+  elements.aiProviderDescription.textContent = preset.description;
+  elements.aiEndpoint.placeholder = preset.endpoint || 'https://api.example.com/v1 或完整 /chat/completions 地址';
+  elements.aiModelLabel.textContent = isAzure ? 'Azure 部署名称' : '模型名称';
+  elements.aiModel.placeholder = isAzure ? '填写 Azure 中已部署的模型名称' : (preset.model || '填写服务商提供的模型 ID');
+}
+
+function applyAiProviderPreset(provider) {
+  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
+  elements.aiProviderPreset.value = provider in AI_PROVIDER_PRESETS ? provider : 'openai-compatible';
+  elements.aiEndpoint.value = preset.endpoint;
+  elements.aiModel.value = preset.model;
+  updateAiProviderUi(elements.aiProviderPreset.value);
 }
 
 function openAiConfig() {
   const config = readAiConfigDraft();
-  elements.aiEndpoint.value = config?.endpoint ?? '';
-  elements.aiModel.value = config?.model ?? '';
+  const provider = aiProviderKeyForConfig(config);
+  elements.aiProviderPreset.value = provider;
+  elements.aiEndpoint.value = config.endpoint;
+  elements.aiModel.value = config.model;
   elements.aiApiKey.value = runtimeAiApiKey;
-  elements.aiOrganizePrompt.value = organizePromptFor(config);
-  elements.aiSummaryPrompt.value = summaryPromptFor(config);
-  updateAiPromptMeta();
+  updateAiProviderUi(provider);
   if (typeof elements.aiConfigDialog.showModal === 'function') elements.aiConfigDialog.showModal();
   else elements.aiConfigDialog.setAttribute('open', '');
 }
@@ -2090,6 +2358,22 @@ function closeEntryDetail() {
   closeWorkspaceDialog(elements.entryDetailDialog);
 }
 
+function deleteJournalEntry(entryId) {
+  const entry = entryForEditing(entryId);
+  if (!entry) return false;
+  if (!window.confirm('删除这条记录？日记与关联待办会从其他已同步设备中一并移除。')) return false;
+  const now = new Date().toISOString();
+  if (!persistDataChange(() => tombstoneJournalEntry(entry, now))) return false;
+  if (state.editingEntryId === entry.id) closeEntryDetail();
+  render();
+  showToast('记录已删除');
+  return true;
+}
+
+function deleteEntryDetail() {
+  return deleteJournalEntry(state.editingEntryId);
+}
+
 function saveEntryDetail() {
   const entry = entryForEditing(state.editingEntryId);
   if (!entry) {
@@ -2114,6 +2398,7 @@ function saveEntryDetail() {
     entry.updatedAt = now;
     markCloudDirty('entries', entry.id);
     invalidateDailySummary(entry.date, now);
+    reconcileEntryTasks([entry], now);
   })) return;
   closeEntryDetail();
   render();
@@ -2142,15 +2427,6 @@ function buildSummaryRequest(config, content) {
     system: template,
     prompt: content,
   };
-}
-
-function updatePromptCount(input, count) {
-  count.textContent = `${input.value.trim().length} 字`;
-}
-
-function updateAiPromptMeta() {
-  updatePromptCount(elements.aiOrganizePrompt, elements.aiOrganizePromptCount);
-  updatePromptCount(elements.aiSummaryPrompt, elements.aiSummaryPromptCount);
 }
 
 function ensureAiConfigured() {
@@ -2194,6 +2470,7 @@ async function requestAI({ system, prompt }) {
           endpoint: config.endpoint,
           model: config.model,
           apiKey: config.apiKey,
+          apiStyle: config.apiStyle,
         },
         system,
         prompt,
@@ -2521,6 +2798,7 @@ async function restoreAutomaticBackup(id) {
 
 async function renderBackupSnapshots() {
   const snapshots = await listAutomaticBackups();
+  elements.cloudDailyBackupStatus.textContent = dailyCloudBackupStatus();
   elements.backupSnapshotList.replaceChildren();
   elements.backupStatus.textContent = snapshots.length ? `保留 ${snapshots.length} 份` : '暂无快照';
   if (!snapshots.length) {
@@ -2590,6 +2868,36 @@ function normalizeImportedEntry(entry) {
   };
 }
 
+function shouldMergeImportedEntry(local, incoming) {
+  return Boolean(local && !incoming?.deletedAt && incomingWins(local, incoming));
+}
+
+function shouldRestoreImportedEntry(local, incoming) {
+  return Boolean(local?.deletedAt && shouldMergeImportedEntry(local, incoming));
+}
+
+function resolveImportedEntries(localEntries, incomingEntries) {
+  const localEntriesById = new Map(localEntries.map((entry) => [entry.id, entry]));
+  const seenIncomingEntryIds = new Set();
+  const newEntries = [];
+  const mergedEntries = [];
+  let restoredEntryCount = 0;
+  incomingEntries.forEach((entry) => {
+    if (seenIncomingEntryIds.has(entry.id)) return;
+    seenIncomingEntryIds.add(entry.id);
+    const local = localEntriesById.get(entry.id);
+    if (!local) {
+      newEntries.push(entry);
+      return;
+    }
+    if (shouldMergeImportedEntry(local, entry)) {
+      mergedEntries.push(entry);
+      if (local.deletedAt) restoredEntryCount += 1;
+    }
+  });
+  return { newEntries, mergedEntries, restoredEntryCount };
+}
+
 function normalizeImportedPeriodSummary(summary) {
   if (!summary || !isUuid(summary.id) || !isDateKey(summary.startDate) || !isDateKey(summary.endDate) || summary.startDate > summary.endDate) return null;
   if (!validText(summary.content, MAX_SUMMARY_CHARS) || !Array.isArray(summary.entryIds) || !summary.entryIds.every(isUuid)) return null;
@@ -2613,10 +2921,12 @@ async function importData(file) {
     const parsed = JSON.parse(raw);
     const incoming = parsed.data ?? parsed;
     if (!incoming || !Array.isArray(incoming.entries) || !incoming.summaries || typeof incoming.summaries !== 'object') throw new Error('invalid');
-    const confirmed = window.confirm(`准备导入 ${incoming.entries.length} 条记录。相同 ID 的记录会跳过，是否继续？`);
+    const confirmed = window.confirm(`准备导入 ${incoming.entries.length} 条记录。同 ID 会保留较新版本；备份中较新的记录可恢复本机已删除的日记，是否继续？`);
     if (!confirmed) return;
-    const ids = new Set(state.data.entries.map((entry) => entry.id));
-    const newEntries = incoming.entries.map(normalizeImportedEntry).filter((entry) => entry && !ids.has(entry.id));
+    const { newEntries, mergedEntries, restoredEntryCount } = resolveImportedEntries(
+      state.data.entries,
+      incoming.entries.map(normalizeImportedEntry).filter(Boolean),
+    );
     const incomingSummaries = Object.entries(incoming.summaries)
       .filter(([date, summary]) => isDateKey(date) && validText(typeof summary === 'string' ? summary : summary?.content, MAX_SUMMARY_CHARS))
       .map(([date, summary]) => [date, typeof summary === 'string' ? { content: summary } : summary]);
@@ -2628,20 +2938,28 @@ async function importData(file) {
       ? incoming.periodSummaries.map(normalizeImportedPeriodSummary).filter((summary) => summary && !periodIds.has(summary.id))
       : [];
     const previous = structuredClone(state.data);
+    const mergedEntriesById = new Map(mergedEntries.map((entry) => [entry.id, entry]));
+    state.data.entries = state.data.entries.map((entry) => mergedEntriesById.get(entry.id) || entry);
     state.data.entries.push(...newEntries);
     state.data.summaries = { ...state.data.summaries, ...newSummaries };
     state.data.periodSummaries.push(...newPeriodSummaries);
     state.data.tasks.push(...newTasks);
-    newEntries.forEach((entry) => markCloudDirty('entries', entry.id));
+    reconcileEntryTasks([...newEntries, ...mergedEntries]);
+    const remainingTaskIds = new Set(state.data.tasks.map((task) => task.id));
+    [...newEntries, ...mergedEntries].forEach((entry) => markCloudDirty('entries', entry.id));
     Object.keys(newSummaries).forEach((date) => markCloudDirty('dailySummaries', date));
     newPeriodSummaries.forEach((summary) => markCloudDirty('periodSummaries', summary.id));
-    newTasks.forEach((task) => markCloudDirty('tasks', task.id));
+    newTasks.filter((task) => remainingTaskIds.has(task.id)).forEach((task) => markCloudDirty('tasks', task.id));
     if (!persistData()) {
       state.data = previous;
       throw new Error('storage');
     }
     render();
-    showToast(`已导入 ${newEntries.length} 条记录；跳过了格式不正确或重复的内容`);
+    const mergedLiveCount = mergedEntries.length - restoredEntryCount;
+    const results = [`新增 ${newEntries.length} 条记录`];
+    if (mergedLiveCount) results.push(`合并 ${mergedLiveCount} 条较新记录`);
+    if (restoredEntryCount) results.push(`恢复 ${restoredEntryCount} 条已删除记录`);
+    showToast(`已导入：${results.join('，')}；跳过了格式不正确、重复或较旧的内容`);
   } catch {
     showToast('导入失败：文件格式不正确、内容过大或本地存储空间不足');
   } finally {
@@ -2730,15 +3048,9 @@ function loadCloudSession() {
     const persistentRaw = localStorage.getItem(CLOUD_SESSION_KEY);
     const legacyRaw = sessionStorage.getItem(CLOUD_SESSION_KEY);
     const saved = JSON.parse(persistentRaw || legacyRaw || 'null');
-    if (!saved || typeof saved !== 'object') return null;
-    const rememberUntil = Number(saved.rememberUntil) || (Date.now() + SESSION_REMEMBER_MS);
-    if (rememberUntil <= Date.now()) {
-      localStorage.removeItem(CLOUD_SESSION_KEY);
-      sessionStorage.removeItem(CLOUD_SESSION_KEY);
-      return null;
-    }
-    const session = { ...saved, rememberUntil };
-    // Migrate the former tab-only session to the two-day device login window.
+    if (!saved || typeof saved !== 'object' || !saved.accessToken || !saved.refreshToken || !saved.user?.id) return null;
+    // Legacy sessions included a local expiry. Migrate them to explicit-sign-out persistence.
+    const { rememberUntil: legacyRememberUntil, ...session } = saved;
     localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(session));
     sessionStorage.removeItem(CLOUD_SESSION_KEY);
     return session;
@@ -2750,18 +3062,13 @@ function loadCloudSession() {
 }
 
 function storeCloudSession(session) {
-  const rememberUntil = Number(session?.rememberUntil);
-  const rememberedSession = session ? {
-    ...session,
-    rememberUntil: rememberUntil > Date.now() ? rememberUntil : Date.now() + SESSION_REMEMBER_MS,
-  } : null;
-  state.cloud.session = rememberedSession;
-  if (rememberedSession) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(rememberedSession));
+  state.cloud.session = session || null;
+  if (session) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(session));
   else localStorage.removeItem(CLOUD_SESSION_KEY);
   sessionStorage.removeItem(CLOUD_SESSION_KEY);
 }
 
-function sessionFromPayload(payload, rememberUntil = Date.now() + SESSION_REMEMBER_MS) {
+function sessionFromPayload(payload) {
   const raw = payload?.session || payload;
   const accessToken = raw?.access_token;
   const refreshToken = raw?.refresh_token;
@@ -2773,7 +3080,6 @@ function sessionFromPayload(payload, rememberUntil = Date.now() + SESSION_REMEMB
     refreshToken,
     user: { id: user.id, email: user.email || '' },
     expiresAt: Number.isFinite(expiry) ? expiry * 1000 : Date.now() + Number(raw.expires_in || 3600) * 1000,
-    rememberUntil,
   };
 }
 
@@ -2798,6 +3104,10 @@ function renderSyncStatus() {
     elements.syncStatus.textContent = '正在同步';
     return;
   }
+  if (state.cloud.lastError) {
+    elements.syncStatus.textContent = '云同步失败，等待重试';
+    return;
+  }
   elements.syncStatus.textContent = hasCloudChanges()
     ? '等待云同步'
     : (state.cloud.attachmentsSupported === false ? '文本日记已同步（兼容模式）' : '云端已同步');
@@ -2810,10 +3120,10 @@ function renderCloudAccountDialog() {
   elements.syncSignedIn.hidden = !session;
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
-    ? '这台设备保持登录两天；期间打开手机或电脑会自动同步。'
-    : '登录或注册后，这台设备会保持登录两天；打开、回到前台和每 10 分钟都会自动同步。';
-  elements.syncLastSession.textContent = session?.expiresAt
-    ? `登录记忆至 ${new Date(session.rememberUntil).toLocaleString('zh-CN')}`
+    ? '这台设备会持续保持登录；打开手机或电脑时会自动同步。'
+    : '登录或注册后会持续保持登录；打开、回到前台和每 10 分钟都会自动同步。';
+  elements.syncLastSession.textContent = session
+    ? '仅在你主动退出、清除站点数据或同步服务撤销会话后需要再次登录。'
     : '';
   elements.accountDialogCopy.textContent = session
     ? '同一邮箱登录手机和电脑后，日记会自动合并到这个账号。'
@@ -2832,9 +3142,11 @@ function renderCloudSyncDialog() {
     ? '云端日记表尚未迁移附件字段，已启用文本同步兼容模式；图片、标签和心情仍保留在本机。'
     : '';
   elements.syncAccountMessage.textContent = session
-    ? (accountId && accountId !== session.user.id
+    ? (state.cloud.lastError
+      ? `上次同步失败：${state.cloud.lastError}`
+      : (accountId && accountId !== session.user.id
       ? '检测到本机曾使用其他账号。立即同步时会先让你确认是否合并。'
-      : (hasCloudChanges() ? '本机有新内容等待上传。' : (`登录、返回前台和每 10 分钟都会自动同步。${compatibilityNotice}`)))
+      : (hasCloudChanges() ? '本机有新内容等待上传。' : (`登录、返回前台和每 10 分钟都会自动同步。${compatibilityNotice}`))))
     : '登录后，日记、当天摘要与跨日汇总会保存到你的云端账号。';
   elements.syncDialogCopy.textContent = session
     ? '这里仅处理跨设备同步，不修改你的日记内容。'
@@ -2934,7 +3246,6 @@ function sessionFromAuthCallback(params, user) {
     expiresAt: Number.isFinite(expiresAt)
       ? expiresAt * 1000
       : Date.now() + (Number.isFinite(expiresIn) ? expiresIn : 3600) * 1000,
-    rememberUntil: Date.now() + SESSION_REMEMBER_MS,
   };
 }
 
@@ -2991,28 +3302,36 @@ async function cloudAuthRequest(path, body) {
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.msg || payload?.error_description || payload?.message || `同步服务返回 ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload?.msg || payload?.error_description || payload?.message || `同步服务返回 ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
 async function refreshCloudSession() {
   const existing = state.cloud.session;
   if (!existing?.refreshToken) return null;
-  const payload = await cloudAuthRequest('/auth/v1/token?grant_type=refresh_token', { refresh_token: existing.refreshToken });
-  const session = sessionFromPayload(payload, existing.rememberUntil);
-  if (!session) throw new Error('登录状态已过期，请重新登录');
-  storeCloudSession(session);
-  return session;
+  try {
+    const payload = await cloudAuthRequest('/auth/v1/token?grant_type=refresh_token', { refresh_token: existing.refreshToken });
+    const session = sessionFromPayload(payload);
+    if (!session) throw new Error('登录状态已过期，请重新登录');
+    storeCloudSession(session);
+    return session;
+  } catch (error) {
+    if ([400, 401, 403].includes(error?.status)) {
+      storeCloudSession(null);
+      stopCloudAutoSync();
+      renderCloudDialogs();
+    }
+    throw error;
+  }
 }
 
 async function activeCloudSession() {
   const session = state.cloud.session;
   if (!session) throw new Error('请先登录同步账号');
-  if (!session.rememberUntil || session.rememberUntil <= Date.now()) {
-    storeCloudSession(null);
-    stopCloudAutoSync();
-    throw new Error('登录记忆已到期，请重新登录');
-  }
   if (session.expiresAt && session.expiresAt > Date.now() + 60_000) return session;
   return refreshCloudSession();
 }
@@ -3063,6 +3382,32 @@ function incomingWins(local, remote) {
   const remoteTime = cloudUpdatedAt(remote);
   if (remoteTime !== localTime) return remoteTime > localTime;
   return Boolean(remote.deletedAt || remote.deleted_at) && !(local?.deletedAt || local?.deleted_at);
+}
+
+function conflictCopyTitle(entry) {
+  const source = String(entry?.title || '').trim() || String(entry?.date || '').trim() || '未命名日记';
+  return `同步冲突副本 · ${source}`.slice(0, MAX_ENTRY_TITLE_CHARS);
+}
+
+function createEntryConflictCopy(entry, now = new Date().toISOString(), id = crypto.randomUUID()) {
+  return {
+    ...entry,
+    id,
+    title: conflictCopyTitle(entry),
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: undefined,
+  };
+}
+
+function shouldPreserveDirtyEntry(local, remote, dirtyEntryIds) {
+  return Boolean(
+    local
+    && !local.deletedAt
+    && Array.isArray(dirtyEntryIds)
+    && dirtyEntryIds.includes(local.id)
+    && incomingWins(local, remote)
+  );
 }
 
 function remoteEntryToLocal(entry, localEntry = null) {
@@ -3123,14 +3468,26 @@ function remotePeriodToLocal(summary) {
   };
 }
 
-function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = [], tasks = [] }) {
+function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = [], tasks = [] }, options = {}) {
+  const preserveDirtyEntryConflicts = options.preserveDirtyEntryConflicts !== false;
+  const dirtyEntryIds = [...cloudDirty('entries')];
+  let conflictCount = 0;
   const entryMap = new Map(state.data.entries.map((entry) => [entry.id, entry]));
   entries.forEach((remoteRecord) => {
     const local = entryMap.get(remoteRecord.id);
     const remote = remoteEntryToLocal(remoteRecord, local);
-    if (!local || incomingWins(local, remote)) entryMap.set(remote.id, remote);
+    if (!local || !incomingWins(local, remote)) return;
+    if (preserveDirtyEntryConflicts && shouldPreserveDirtyEntry(local, remote, dirtyEntryIds)) {
+      const conflictCopy = createEntryConflictCopy(local);
+      entryMap.set(conflictCopy.id, conflictCopy);
+      clearCloudDirty('entries', [local.id]);
+      markCloudDirty('entries', conflictCopy.id);
+      conflictCount += 1;
+    }
+    entryMap.set(remote.id, remote);
   });
   state.data.entries = [...entryMap.values()];
+  if (conflictCount) recordCloudActivity(`检测到 ${conflictCount} 条跨设备修改冲突，已保留为“同步冲突副本”`, 'info');
 
   dailySummaries.forEach((remoteRecord) => {
     const remote = remoteSummaryToLocal(remoteRecord);
@@ -3222,6 +3579,11 @@ async function pullCloudData() {
 function isMissingCloudAttachmentsColumn(error) {
   const message = error instanceof Error ? error.message : '';
   return message.includes('column journal_entries.attachments does not exist');
+}
+
+function isMissingCloudBackupsTable(error) {
+  const message = error instanceof Error ? error.message : '';
+  return /journal_backups|PGRST205/i.test(message);
 }
 
 function entryToCloud(entry, userId) {
@@ -3321,7 +3683,7 @@ async function pushCloudChanges() {
       headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify(entries.map((entry) => entryToCloud(entry, userId))),
     });
-    mergeRemoteData({ entries: saved || [] });
+    mergeRemoteData({ entries: saved || [] }, { preserveDirtyEntryConflicts: false });
   }
   clearCloudDirty('entries', entryIds);
 
@@ -3395,6 +3757,8 @@ async function syncCloud({ quiet = false } = {}) {
       }
       await pullCloudData();
       await pushCloudChanges();
+      await saveDailyCloudBackup(session.user.id);
+      state.cloud.lastError = '';
       persistData({ queue: false });
       render();
       renderCloudDialogs();
@@ -3403,10 +3767,12 @@ async function syncCloud({ quiet = false } = {}) {
         showToast('云端内容已同步');
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      const isNewError = state.cloud.lastError !== message;
+      state.cloud.lastError = message;
+      if (!quiet || isNewError) recordCloudActivity(`同步失败：${message}`, 'error');
       renderCloudSyncDialog();
       if (!quiet) {
-        const message = error instanceof Error ? error.message : '未知错误';
-        recordCloudActivity(`同步失败：${message}`, 'error');
         showToast(message.includes('stale update')
           ? '检测到另一台设备的较新版本：已停止上传以防覆盖，请先导出本机内容后刷新同步。'
           : `同步失败：${message}`);
@@ -3803,6 +4169,7 @@ function bindEvents() {
     event.preventDefault();
     saveEntryDetail();
   });
+  elements.deleteEntryDetail?.addEventListener('click', deleteEntryDetail);
   elements.draftLibraryButton.addEventListener('click', openDraftLibrary);
   elements.closeDraftLibraryDialog.addEventListener('click', closeDraftLibrary);
   closeDialogOnBackdrop(elements.periodSummaryDialog, closePeriodSummaryDialog);
@@ -3861,6 +4228,7 @@ function bindEvents() {
     elements.searchInput.value = ''; elements.searchStartDate.value = ''; elements.searchEndDate.value = ''; elements.searchTagFilter.value = ''; elements.searchMoodFilter.value = ''; elements.searchHasAttachment.checked = false; renderSearchResults();
   });
   elements.exportButton.addEventListener('click', exportData);
+  elements.importButton?.addEventListener('click', () => elements.importInput.click());
   elements.importInput.addEventListener('change', (event) => {
     const [file] = event.target.files;
     if (file) importData(file);
@@ -3879,39 +4247,43 @@ function bindEvents() {
     event.preventDefault();
     savePromptEditor();
   });
-  elements.aiOrganizePrompt.addEventListener('input', updateAiPromptMeta);
-  elements.aiSummaryPrompt.addEventListener('input', updateAiPromptMeta);
-  elements.restoreOrganizePrompt.addEventListener('click', () => {
-    elements.aiOrganizePrompt.value = DEFAULT_ORGANIZE_PROMPT;
-    updateAiPromptMeta();
-  });
-  elements.restoreSummaryPrompt.addEventListener('click', () => {
-    elements.aiSummaryPrompt.value = DEFAULT_SUMMARY_PROMPT;
-    updateAiPromptMeta();
-  });
+  elements.aiProviderPreset.addEventListener('change', () => applyAiProviderPreset(elements.aiProviderPreset.value));
+  elements.openOrganizePromptSettings.addEventListener('click', () => openPromptEditor('organize'));
+  elements.openSummaryPromptSettings.addEventListener('click', () => openPromptEditor('summary'));
   elements.aiConfigForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    const existing = readAiConfigDraft();
+    const provider = elements.aiProviderPreset.value;
+    const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
     const config = {
+      ...existing,
+      provider,
+      apiStyle: preset.apiStyle,
       endpoint: elements.aiEndpoint.value.trim(),
       model: elements.aiModel.value.trim(),
-      organizePrompt: elements.aiOrganizePrompt.value.trim() || DEFAULT_ORGANIZE_PROMPT,
-      summaryPrompt: elements.aiSummaryPrompt.value.trim() || DEFAULT_SUMMARY_PROMPT,
     };
     const apiKey = elements.aiApiKey.value.trim();
-    if (!config.endpoint || !config.model || !apiKey) return;
+    if (!isAiConfigComplete(config) || !apiKey) {
+      showToast('请填写有效的 API 地址、模型或部署名称和 API Key');
+      return;
+    }
     runtimeAiApiKey = apiKey;
     localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
     closeAiConfig();
     showToast(`模型配置已保存：${config.model}；Key 仅保留到本次页面会话结束`);
   });
   elements.removeAiConfig.addEventListener('click', () => {
-    localStorage.removeItem(AI_CONFIG_KEY);
+    const existing = readAiConfigDraft();
+    const prompts = {
+      ...(existing.organizePrompt ? { organizePrompt: existing.organizePrompt } : {}),
+      ...(existing.summaryPrompt ? { summaryPrompt: existing.summaryPrompt } : {}),
+    };
+    if (Object.keys(prompts).length) localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(prompts));
+    else localStorage.removeItem(AI_CONFIG_KEY);
     runtimeAiApiKey = '';
     elements.aiConfigForm.reset();
-    elements.aiOrganizePrompt.value = DEFAULT_ORGANIZE_PROMPT;
-    elements.aiSummaryPrompt.value = DEFAULT_SUMMARY_PROMPT;
-    updateAiPromptMeta();
-    showToast('模型配置已清除');
+    applyAiProviderPreset('deepseek');
+    showToast('模型连接已清除；提示词配置已保留');
   });
 }
 

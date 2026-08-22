@@ -10,8 +10,8 @@ import { promisify } from 'node:util';
 const runFile = promisify(execFile);
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const version = JSON.parse(await readFile(new URL('../mobile-version.json', import.meta.url), 'utf8'));
-assert.equal(version.versionCode, 3);
-assert.equal(version.versionName, '1.1.1');
+assert.equal(version.versionCode, 4);
+assert.equal(version.versionName, '1.1.2');
 
 const temp = await mkdtemp(join(tmpdir(), 'suijian-native-update-'));
 const apkPath = join(temp, 'app-release.apk');
@@ -29,8 +29,8 @@ await runFile('node', [
 const manifest = JSON.parse(await readFile(join(outputPath, 'native-app-update.json'), 'utf8'));
 assert.equal(manifest.versionCode, version.versionCode);
 assert.equal(manifest.versionName, version.versionName);
-assert.equal(manifest.apkUrl, 'https://aron0525.github.io/suijian-journal/downloads/suijian-android-v1.1.1.apk');
+assert.equal(manifest.apkUrl, `https://aron0525.github.io/suijian-journal/downloads/suijian-android-v${version.versionName}.apk`);
 assert.equal(manifest.checksum, createHash('sha256').update(apkBytes).digest('hex'));
-assert.equal(await readFile(join(outputPath, 'downloads', 'suijian-android-v1.1.1.apk'), 'utf8'), apkBytes.toString());
+assert.equal(await readFile(join(outputPath, 'downloads', `suijian-android-v${version.versionName}.apk`), 'utf8'), apkBytes.toString());
 
 console.log(`Native Android update package regression checks passed: v${manifest.versionName}`);

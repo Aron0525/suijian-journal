@@ -20,7 +20,7 @@ const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index, i
 
 assert.equal(indexHtm, index, 'index.htm is the installed PWA entry point and must match index.html');
 
-assert.match(app, /const SESSION_REMEMBER_MS = 2 \* 24 \* 60 \* 60 \* 1000/);
+assert.doesNotMatch(app, /const SESSION_REMEMBER_MS/);
 assert.match(app, /const AUTO_SYNC_INTERVAL_MS = 10 \* 60 \* 1000/);
 assert.match(app, /const MOBILE_OTA_MANIFEST_URL = 'https:\/\/aron0525\.github\.io\/suijian-journal\/app-update\.json'/);
 assert.match(app, /function nativeUpdater\(\)/);
@@ -40,7 +40,8 @@ assert.match(app, /native-app-update\.json/);
 
 assert.match(app, /localStorage\.setItem\(CLOUD_SESSION_KEY/);
 assert.match(app, /sessionStorage\.removeItem\(CLOUD_SESSION_KEY/);
-assert.match(app, /rememberUntil/);
+assert.match(app, /Legacy sessions included a local expiry/);
+assert.doesNotMatch(app, /session\.rememberUntil|rememberUntil <= Date\.now/);
 assert.match(app, /function startCloudAutoSync\(\)/);
 assert.match(app, /window\.setInterval\(\(\) => syncCloud\(\{ quiet: true \}\), AUTO_SYNC_INTERVAL_MS\)/);
 assert.match(app, /function syncBeforeLeaving\(\)/);
@@ -50,7 +51,7 @@ assert.match(app, /email_redirect_to: emailRedirectUrl\(\)/);
 assert.match(app, /async function restoreCloudSessionFromAuthCallback\(\)/);
 assert.match(app, /\/auth\/v1\/user/);
 assert.match(app, /history\.replaceState/);
-assert.match(app, /这台设备会保持登录两天；打开、回到前台和每 10 分钟都会自动同步/);
+assert.match(app, /登录或注册后会持续保持登录；打开、回到前台和每 10 分钟都会自动同步/);
 assert.match(app, /function validateCloudCredentials\(\)/);
 assert.match(app, /const \{ apiKey: legacyApiKey, \.\.\.safeConfig \} = config/);
 assert.match(app, /账号已切换，等待确认/);
@@ -100,14 +101,15 @@ const archiveMarkup = index.match(/<section class="archive-section"[\s\S]+?<\/se
 assert.ok(archiveMarkup, 'calendar archive markup should exist');
 assert.doesNotMatch(archiveMarkup, /日期范围/);
 const topTools = index.match(/<div class="top-tools">([\s\S]+?)<\/div>/)?.[1] ?? '';
-assert.match(topTools, /search-panel-button[\s\S]*summary-panel-button[\s\S]*review-panel-button[\s\S]*export-button[\s\S]*import-input[\s\S]*backup-panel-button[\s\S]*cloud-sync-button[\s\S]*model-config-button[\s\S]*cloud-account-button/);
+assert.match(topTools, /search-panel-button[\s\S]*summary-panel-button[\s\S]*review-panel-button[\s\S]*export-button[\s\S]*import-input[\s\S]*backup-panel-button[\s\S]*model-config-button[\s\S]*cloud-sync-button[\s\S]*cloud-account-button/);
 assert.match(topTools, /id="search-panel-button" class="top-search-action"[^>]*aria-label="搜索日记"[\s\S]*?<svg/);
 assert.doesNotMatch(topTools, /id="search-panel-button"[^>]*>搜索</);
 assert.match(topTools, /id="summary-panel-button" class="top-text-action"/);
 assert.match(topTools, /id="review-panel-button" class="top-text-action"/);
 assert.match(topTools, /id="export-button" class="top-text-action"/);
-assert.match(topTools, /class="top-text-action import-label" for="import-input"/);
-assert.match(topTools, /id="cloud-sync-button" class="top-text-action"/);
+assert.match(topTools, /id="import-button" class="top-text-action import-button" type="button" aria-controls="import-input">导入<\/button>/);
+assert.match(index, /id="import-input" type="file" accept="application\/json,\.json" hidden/);
+assert.match(topTools, /id="cloud-sync-button" class="top-text-action top-sync-action"/);
 assert.match(topTools, /id="model-config-button" class="top-text-action"/);
 assert.match(topTools, /id="cloud-account-button" class="top-text-action account-action"/);
 assert.equal((topTools.match(/class="top-tool-divider"/g) ?? []).length, 8, 'top actions should use eight vertical separators');
@@ -143,8 +145,8 @@ assert.match(packageJson, /"@capacitor\/app"/);
 assert.match(packageJson, /"build:android"/);
 assert.match(nativeBuildScript, /native-app-update\.json/);
 assert.match(nativeBuildScript, /suijian-android-v\$\{versionName\}\.apk/);
-assert.match(mobileVersion, /"versionCode": 3/);
-assert.match(mobileVersion, /"versionName": "1\.1\.1"/);
+assert.match(mobileVersion, /"versionCode": 4/);
+assert.match(mobileVersion, /"versionName": "1\.1\.2"/);
 assert.match(packageJson, /"@capgo\/capacitor-updater"/);
 assert.match(manifest, /"start_url": "\.\/index\.htm"/);
 assert.match(manifest, /"scope": "\.\/"/);

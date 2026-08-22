@@ -18,12 +18,28 @@ ROOT = Path(__file__).resolve().parent
 MAX_BODY_BYTES = 512_000
 MODEL_TIMEOUT_SECONDS = 75
 CHAT_COMPLETIONS_PATH = '/chat/completions'
-DEFAULT_ALLOWED_AI_HOSTS = {'api.deepseek.com', 'api.openai.com'}
+AI_API_STYLE_OPENAI_COMPATIBLE = 'openai-compatible'
+AI_API_STYLE_AZURE_OPENAI = 'azure-openai'
+SUPPORTED_AI_API_STYLES = {AI_API_STYLE_OPENAI_COMPATIBLE, AI_API_STYLE_AZURE_OPENAI}
+DEFAULT_ALLOWED_AI_HOSTS = {
+    'api.deepseek.com',
+    'api.openai.com',
+    'dashscope.aliyuncs.com',
+    'api.moonshot.cn',
+    'api.moonshot.ai',
+    'api.minimax.io',
+    'api.z.ai',
+}
 
 
 def allowed_ai_hosts() -> set[str]:
     configured = os.environ.get('AI_ALLOWED_HOSTS', '')
     return DEFAULT_ALLOWED_AI_HOSTS | {host.strip().lower() for host in configured.split(',') if host.strip()}
+
+
+def is_allowed_ai_host(hostname: str | None) -> bool:
+    host = (hostname or '').lower()
+    return host in allowed_ai_hosts() or host.endswith('.openai.azure.com') or host.endswith('.maas.aliyuncs.com')
 
 
 def normalize_chat_endpoint(raw_endpoint: str) -> str:
@@ -37,7 +53,13 @@ def normalize_chat_endpoint(raw_endpoint: str) -> str:
 
 def is_allowed_model_endpoint(endpoint: str) -> bool:
     parsed = urlparse(endpoint)
-    return parsed.scheme == 'https' and bool(parsed.hostname) and parsed.hostname.lower() in allowed_ai_hosts()
+    return parsed.scheme == 'https' and is_allowed_ai_host(parsed.hostname)
+
+
+def upstream_auth_headers(api_key: str, api_style: str) -> dict[str, str]:
+    if api_style == AI_API_STYLE_AZURE_OPENAI:
+        return {'api-key': api_key}
+    return {'Authorization': f'Bearer {api_key}'}
 
 
 def model_ssl_context() -> ssl.SSLContext:
@@ -92,6 +114,7 @@ class JournalHandler(SimpleHTTPRequestHandler):
             endpoint = config['endpoint'].strip()
             model = config['model'].strip()
             api_key = config['apiKey'].strip()
+            api_style = str(config.get('apiStyle', AI_API_STYLE_OPENAI_COMPATIBLE)).strip()
             system = payload['system'].strip()
             prompt = payload['prompt'].strip()
         except (KeyError, AttributeError, TypeError, json.JSONDecodeError):
@@ -102,6 +125,7 @@ class JournalHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(endpoint)
         if (
             not is_allowed_model_endpoint(endpoint)
+            or api_style not in SUPPORTED_AI_API_STYLES
             or not model
             or not api_key
             or not system
@@ -123,8 +147,8 @@ class JournalHandler(SimpleHTTPRequestHandler):
             data=upstream_payload,
             headers={
                 'Content-Type': 'application/json',
-                'Authorization': f'Bearer {api_key}',
                 'User-Agent': 'suijian-local-pwa/1.0',
+                **upstream_auth_headers(api_key, api_style),
             },
             method='POST',
         )
