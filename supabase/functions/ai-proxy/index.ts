@@ -9,7 +9,17 @@ const corsHeaders = {
 const MAX_BODY_BYTES = 512_000;
 const CHAT_COMPLETIONS_PATH = '/chat/completions';
 const MODEL_REQUEST_TIMEOUT_MS = 75_000;
-const DEFAULT_ALLOWED_AI_HOSTS = ['api.deepseek.com', 'api.openai.com'];
+const AI_API_STYLE_OPENAI_COMPATIBLE = 'openai-compatible';
+const AI_API_STYLE_AZURE_OPENAI = 'azure-openai';
+const DEFAULT_ALLOWED_AI_HOSTS = [
+  'api.deepseek.com',
+  'api.openai.com',
+  'dashscope.aliyuncs.com',
+  'api.moonshot.cn',
+  'api.moonshot.ai',
+  'api.minimax.io',
+  'api.z.ai',
+];
 
 function allowedAiHosts() {
   const configured = Deno.env.get('AI_ALLOWED_HOSTS') || '';
@@ -17,6 +27,11 @@ function allowedAiHosts() {
     ...DEFAULT_ALLOWED_AI_HOSTS,
     ...configured.split(',').map((host) => host.trim().toLowerCase()).filter(Boolean),
   ]);
+}
+
+function isAllowedAiHost(hostname: string) {
+  const host = hostname.toLowerCase();
+  return allowedAiHosts().has(host) || host.endsWith('.openai.azure.com') || host.endsWith('.maas.aliyuncs.com');
 }
 
 function json(body: unknown, status = 200) {
@@ -53,11 +68,12 @@ export default {
       const endpoint = normalizeChatEndpoint(payload?.config?.endpoint || '');
       const model = String(payload?.config?.model || '').trim();
       const apiKey = String(payload?.config?.apiKey || '').trim();
+      const apiStyle = String(payload?.config?.apiStyle || AI_API_STYLE_OPENAI_COMPATIBLE).trim();
       const system = String(payload?.system || '').trim();
       const prompt = String(payload?.prompt || '').trim();
       const parsed = new URL(endpoint);
 
-      if (parsed.protocol !== 'https:' || !allowedAiHosts().has(parsed.hostname.toLowerCase()) || !model || !apiKey || !system || !prompt) {
+      if (parsed.protocol !== 'https:' || !isAllowedAiHost(parsed.hostname) || ![AI_API_STYLE_OPENAI_COMPATIBLE, AI_API_STYLE_AZURE_OPENAI].includes(apiStyle) || !model || !apiKey || !system || !prompt) {
         return json({ error: { message: '请检查 API 地址、模型名称、Key 和请求内容' } }, 400);
       }
 
@@ -66,7 +82,10 @@ export default {
       const upstream = await fetch(endpoint, {
         method: 'POST',
         signal: controller.signal,
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiStyle === 'azure-openai' ? { 'api-key': apiKey } : { Authorization: `Bearer ${apiKey}` }),
+        },
         body: JSON.stringify({
           model,
           temperature: 0.3,

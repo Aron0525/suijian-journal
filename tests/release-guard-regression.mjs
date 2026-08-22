@@ -34,7 +34,7 @@ assert.match(gitignore, /^android\/signing\.properties$/m);
 assert.match(gitignore, /^signing\.properties$/m);
 assert.match(gitignore, /^android\/app\/google-services\.json$/m);
 assert.match(androidManifest, /android:allowBackup="false"/);
-assert.match(readme, /登录会话会在当前浏览器或 App 中保留最多 2 天/);
+assert.match(readme, /登录会话会持续保留，直到主动退出、清除站点数据或同步服务撤销会话/);
 assert.doesNotMatch(readme, /关闭浏览器或 App 后重新登录/);
 
 console.log('Release guard regression checks passed');

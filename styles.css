@@ -42,6 +42,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .top-text-action { padding: 5px 9px; border: 0; color: var(--ink-soft); background: transparent; font-size: 12px; line-height: 1.3; white-space: nowrap; transition: color .2s; }
 .top-text-action:hover { color: var(--clay-deep); }
 .top-tools .top-text-action.import-button { color: var(--ink-soft); }
+.top-sync-action { display: inline-flex; align-items: center; gap: 4px; }
+.top-sync-action svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.9; }
 .top-tool-divider { width: 1px; height: 16px; background: var(--line); }
 .top-search-action { display: grid; place-items: center; width: 30px; height: 28px; padding: 0; border: 0; color: var(--ink-soft); background: transparent; transition: color .2s, transform .2s; }
 .top-search-action:hover { color: var(--clay-deep); transform: translateY(-1px); }
@@ -187,6 +189,7 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .top-actions { width: 100%; max-width: none; justify-items: stretch; gap: 0; }
   .top-tools { justify-content: flex-start; width: 100%; flex-wrap: wrap; }
   .top-text-action, .top-search-action { display: inline-grid; place-items: center; min-width: 40px; min-height: 40px; padding: 8px 6px; font-size: 12px; }
+  .top-text-action.top-sync-action { display: inline-flex; justify-content: center; }
   .top-tool-divider { align-self: center; height: 16px; }
   .top-search-action { width: 40px; height: 40px; }
   .sync-status { display: none; }
@@ -233,16 +236,17 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 .period-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 13px; align-items: end; }
 .period-ai-actions { display: flex; align-items: center; gap: 9px; }
 .period-form label, .ai-config-dialog label { display: grid; gap: 8px; color: var(--ink-soft); font-size: 12px; }
-.period-form input, .ai-config-dialog input, .ai-config-dialog textarea { width: 100%; min-height: 43px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: rgba(255,255,255,.45); }
+.period-form input, .ai-config-dialog input, .ai-config-dialog select, .ai-config-dialog textarea { width: 100%; min-height: 43px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 2px; color: var(--ink); background: rgba(255,255,255,.45); }
 .ai-config-dialog textarea { min-height: 128px; resize: vertical; font: inherit; line-height: 1.65; }
-.ai-prompt-grid { display: grid; gap: 14px; margin-top: 20px; }
-.ai-prompt-panel { display: grid; gap: 11px; padding: 15px; border: 1px solid rgba(154,172,113,.7); border-radius: 3px 15px 3px 3px; background: rgba(154,172,113,.1); }
-.ai-prompt-panel:nth-child(2) { border-color: rgba(198,109,76,.5); background: rgba(198,109,76,.07); }
-.ai-prompt-head, .ai-prompt-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.ai-prompt-head strong { display: block; margin-top: 3px; color: var(--ink); font-family: var(--font-serif); font-size: 15px; }
+.ai-provider-description { min-height: 38px; margin: 11px 0 -2px; padding: 10px 12px; border-left: 3px solid var(--moss); color: var(--ink-soft); background: rgba(154,172,113,.1); font-size: 12px; line-height: 1.65; }
+.ai-prompt-shortcuts { display: grid; gap: 11px; margin-top: 20px; }
+.ai-prompt-shortcut { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 15px; border: 1px solid rgba(154,172,113,.7); border-radius: 3px 15px 3px 3px; background: rgba(154,172,113,.1); }
+.ai-prompt-shortcut:nth-child(2) { border-color: rgba(198,109,76,.5); background: rgba(198,109,76,.07); }
+.ai-prompt-shortcut strong { display: block; margin-top: 3px; color: var(--ink); font-family: var(--font-serif); font-size: 15px; }
+.ai-prompt-shortcut p { max-width: 330px; margin: 6px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
+.ai-prompt-shortcut .quiet-button { flex: 0 0 auto; padding: 6px 8px; font-size: 11px; }
+.ai-prompt-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .prompt-kicker { display: block; color: var(--clay-deep); font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; }
-.ai-prompt-panel .quiet-button { padding: 5px 7px; font-size: 11px; }
-.ai-prompt-panel textarea { min-height: 128px; background: rgba(255,255,255,.6); }
 .ai-prompt-meta { color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
 .ai-prompt-meta span:last-child { flex: 0 0 auto; color: var(--clay-deep); font-family: var(--font-mono); }
 .range-hint { margin-top: 18px; }
@@ -302,7 +306,6 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 .dialog-actions { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-top: 22px; }
 
 @media (max-width: 760px) {
-  .model-config-button { display: none; }
   .ai-consent-row, .review-intro { align-items: flex-start; flex-direction: column; }
   .period-form { grid-template-columns: 1fr; }
   .period-ai-actions { justify-self: start; }
@@ -316,6 +319,8 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .workspace-dialog .section-heading { padding-right: 38px; }
   .sync-gate { align-items: flex-start; flex-direction: column; gap: 14px; }
   .ai-config-dialog form { padding: 22px; }
+  .ai-prompt-shortcut { align-items: flex-start; flex-direction: column; }
+  .ai-prompt-shortcut .quiet-button { min-height: 40px; }
   .ai-consent-row .primary-button { width: 100%; }
 }
 

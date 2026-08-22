@@ -33,7 +33,6 @@ const JOURNAL_MOODS = Object.freeze(['舒展', '平静', '充实', '开心', '�
 const JOURNAL_ATTACHMENT_BUCKET = 'journal-attachments';
 const MAX_ENTRY_CONTENT_CHARS = 10000;
 const MAX_SUMMARY_CHARS = 60000;
-const SESSION_REMEMBER_MS = 2 * 24 * 60 * 60 * 1000;
 const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const MOBILE_OTA_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/app-update.json';
 const MOBILE_OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -41,6 +40,61 @@ const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://aron0525.github.io/suijian-journ
 const REMINDER_SETTINGS_KEY = 'suijian-writing-reminder-v1';
 const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7], skipDate: '', snoozedUntil: '' });
 let runtimeAiApiKey = '';
+const AI_API_STYLES = Object.freeze({
+  OPENAI_COMPATIBLE: 'openai-compatible',
+  AZURE_OPENAI: 'azure-openai',
+});
+const AI_PROVIDER_PRESETS = Object.freeze({
+  deepseek: Object.freeze({
+    label: 'DeepSeek',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.deepseek.com',
+    model: 'deepseek-v4-flash',
+    description: 'DeepSeek 的 Chat Completions 接口；已预填官方地址与适合日记处理的 Flash 模型。',
+  }),
+  'openai-compatible': Object.freeze({
+    label: 'OpenAI 兼容 API',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: '',
+    model: '',
+    description: '适用于 OpenAI 与提供 Chat Completions 兼容接口的平台，例如 SiliconFlow。填写该平台的基础地址和模型 ID。',
+  }),
+  'azure-openai': Object.freeze({
+    label: 'Azure OpenAI',
+    apiStyle: AI_API_STYLES.AZURE_OPENAI,
+    endpoint: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+    model: 'YOUR-DEPLOYMENT-NAME',
+    description: '使用 Azure OpenAI 的 OpenAI v1 地址；模型名称填写 Azure 中已部署的 deployment 名称，代理会改用 api-key 请求头。',
+  }),
+  qwen: Object.freeze({
+    label: '千问 Qwen',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus',
+    description: '百炼 OpenAI 兼容接口；已预填 Qwen Plus。若使用工作空间或其他地域，可直接改为服务商提供的基础地址。',
+  }),
+  kimi: Object.freeze({
+    label: 'Kimi',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k2.6',
+    description: 'Kimi 开放平台的 OpenAI 兼容接口；已预填 Kimi K2.6。',
+  }),
+  minimax: Object.freeze({
+    label: 'MiniMax',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.minimax.io/v1',
+    model: 'MiniMax-M2.7',
+    description: 'MiniMax 的 OpenAI 兼容接口；已预填 MiniMax-M2.7。',
+  }),
+  glm: Object.freeze({
+    label: '智谱 GLM',
+    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.z.ai/api/paas/v4',
+    model: 'glm-5.1',
+    description: '智谱 Z.AI 的 OpenAI 兼容接口；已预填 GLM-5.1。',
+  }),
+});
 const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
 要求：
@@ -254,15 +308,14 @@ const elements = {
   modelConfigButton: document.querySelector('#model-config-button'),
   aiConfigDialog: document.querySelector('#ai-config-dialog'),
   aiConfigForm: document.querySelector('#ai-config-form'),
+  aiProviderPreset: document.querySelector('#ai-provider-preset'),
+  aiProviderDescription: document.querySelector('#ai-provider-description'),
   aiEndpoint: document.querySelector('#ai-endpoint'),
+  aiModelLabel: document.querySelector('#ai-model-label'),
   aiModel: document.querySelector('#ai-model'),
   aiApiKey: document.querySelector('#ai-api-key'),
-  aiOrganizePrompt: document.querySelector('#ai-organize-prompt'),
-  aiOrganizePromptCount: document.querySelector('#ai-organize-prompt-count'),
-  restoreOrganizePrompt: document.querySelector('#restore-organize-prompt'),
-  aiSummaryPrompt: document.querySelector('#ai-summary-prompt'),
-  aiSummaryPromptCount: document.querySelector('#ai-summary-prompt-count'),
-  restoreSummaryPrompt: document.querySelector('#restore-summary-prompt'),
+  openOrganizePromptSettings: document.querySelector('#open-organize-prompt-settings'),
+  openSummaryPromptSettings: document.querySelector('#open-summary-prompt-settings'),
   closeAiConfig: document.querySelector('#close-ai-config'),
   removeAiConfig: document.querySelector('#remove-ai-config'),
   promptEditorDialog: document.querySelector('#prompt-editor-dialog'),
@@ -2091,30 +2144,79 @@ function saveNewEntry() {
   showToast('记录已保存');
 }
 
+function aiProviderKeyForConfig(config = {}) {
+  if (AI_PROVIDER_PRESETS[config?.provider]) return config.provider;
+  const endpoint = String(config?.endpoint || '').toLowerCase();
+  if (endpoint.includes('api.deepseek.com')) return 'deepseek';
+  if (endpoint.includes('dashscope.aliyuncs.com') || endpoint.includes('maas.aliyuncs.com')) return 'qwen';
+  if (endpoint.includes('api.moonshot.cn') || endpoint.includes('api.moonshot.ai')) return 'kimi';
+  if (endpoint.includes('api.minimax.io')) return 'minimax';
+  if (endpoint.includes('api.z.ai')) return 'glm';
+  if (endpoint.includes('.openai.azure.com')) return 'azure-openai';
+  return 'openai-compatible';
+}
+
+function normalizeAiConfig(config = {}) {
+  const provider = aiProviderKeyForConfig(config);
+  const preset = AI_PROVIDER_PRESETS[provider];
+  return {
+    ...config,
+    provider,
+    apiStyle: config?.apiStyle === AI_API_STYLES.AZURE_OPENAI || preset.apiStyle === AI_API_STYLES.AZURE_OPENAI
+      ? AI_API_STYLES.AZURE_OPENAI
+      : AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: String(config?.endpoint || '').trim(),
+    model: String(config?.model || '').trim(),
+  };
+}
+
 function readAiConfigDraft() {
   try {
     const config = JSON.parse(localStorage.getItem(AI_CONFIG_KEY));
-    if (!config || typeof config !== 'object') return {};
+    if (!config || typeof config !== 'object') return normalizeAiConfig();
     // Migrate older installations away from storing an API key in localStorage.
     const { apiKey: legacyApiKey, ...safeConfig } = config;
     if (legacyApiKey) localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(safeConfig));
-    return safeConfig;
-  } catch { return {}; }
+    return normalizeAiConfig(safeConfig);
+  } catch { return normalizeAiConfig(); }
+}
+
+function isAiConfigComplete(config) {
+  const endpoint = String(config?.endpoint || '').trim();
+  const model = String(config?.model || '').trim();
+  return Boolean(endpoint && model && !endpoint.includes('YOUR-RESOURCE-NAME') && !model.includes('YOUR-DEPLOYMENT-NAME'));
 }
 
 function getAiConfig() {
   const config = readAiConfigDraft();
-  return config.endpoint && config.model && runtimeAiApiKey ? { ...config, apiKey: runtimeAiApiKey } : null;
+  return isAiConfigComplete(config) && runtimeAiApiKey ? { ...config, apiKey: runtimeAiApiKey } : null;
+}
+
+function updateAiProviderUi(provider = elements.aiProviderPreset.value) {
+  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
+  const isAzure = preset.apiStyle === AI_API_STYLES.AZURE_OPENAI;
+  elements.aiProviderDescription.textContent = preset.description;
+  elements.aiEndpoint.placeholder = preset.endpoint || 'https://api.example.com/v1 或完整 /chat/completions 地址';
+  elements.aiModelLabel.textContent = isAzure ? 'Azure 部署名称' : '模型名称';
+  elements.aiModel.placeholder = isAzure ? '填写 Azure 中已部署的模型名称' : (preset.model || '填写服务商提供的模型 ID');
+}
+
+function applyAiProviderPreset(provider) {
+  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
+  elements.aiProviderPreset.value = provider in AI_PROVIDER_PRESETS ? provider : 'openai-compatible';
+  elements.aiEndpoint.value = preset.endpoint;
+  elements.aiModel.value = preset.model;
+  updateAiProviderUi(elements.aiProviderPreset.value);
 }
 
 function openAiConfig() {
   const config = readAiConfigDraft();
-  elements.aiEndpoint.value = config?.endpoint ?? '';
-  elements.aiModel.value = config?.model ?? '';
+  const provider = aiProviderKeyForConfig(config);
+  elements.aiProviderPreset.value = provider;
+  elements.aiEndpoint.value = config.endpoint;
+  elements.aiModel.value = config.model;
   elements.aiApiKey.value = runtimeAiApiKey;
-  elements.aiOrganizePrompt.value = organizePromptFor(config);
-  elements.aiSummaryPrompt.value = summaryPromptFor(config);
-  updateAiPromptMeta();
+  updateAiProviderUi(provider);
   if (typeof elements.aiConfigDialog.showModal === 'function') elements.aiConfigDialog.showModal();
   else elements.aiConfigDialog.setAttribute('open', '');
 }
@@ -2327,15 +2429,6 @@ function buildSummaryRequest(config, content) {
   };
 }
 
-function updatePromptCount(input, count) {
-  count.textContent = `${input.value.trim().length} 字`;
-}
-
-function updateAiPromptMeta() {
-  updatePromptCount(elements.aiOrganizePrompt, elements.aiOrganizePromptCount);
-  updatePromptCount(elements.aiSummaryPrompt, elements.aiSummaryPromptCount);
-}
-
 function ensureAiConfigured() {
   if (getAiConfig()) return true;
   openAiConfig();
@@ -2377,6 +2470,7 @@ async function requestAI({ system, prompt }) {
           endpoint: config.endpoint,
           model: config.model,
           apiKey: config.apiKey,
+          apiStyle: config.apiStyle,
         },
         system,
         prompt,
@@ -2954,15 +3048,9 @@ function loadCloudSession() {
     const persistentRaw = localStorage.getItem(CLOUD_SESSION_KEY);
     const legacyRaw = sessionStorage.getItem(CLOUD_SESSION_KEY);
     const saved = JSON.parse(persistentRaw || legacyRaw || 'null');
-    if (!saved || typeof saved !== 'object') return null;
-    const rememberUntil = Number(saved.rememberUntil) || (Date.now() + SESSION_REMEMBER_MS);
-    if (rememberUntil <= Date.now()) {
-      localStorage.removeItem(CLOUD_SESSION_KEY);
-      sessionStorage.removeItem(CLOUD_SESSION_KEY);
-      return null;
-    }
-    const session = { ...saved, rememberUntil };
-    // Migrate the former tab-only session to the two-day device login window.
+    if (!saved || typeof saved !== 'object' || !saved.accessToken || !saved.refreshToken || !saved.user?.id) return null;
+    // Legacy sessions included a local expiry. Migrate them to explicit-sign-out persistence.
+    const { rememberUntil: legacyRememberUntil, ...session } = saved;
     localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(session));
     sessionStorage.removeItem(CLOUD_SESSION_KEY);
     return session;
@@ -2974,18 +3062,13 @@ function loadCloudSession() {
 }
 
 function storeCloudSession(session) {
-  const rememberUntil = Number(session?.rememberUntil);
-  const rememberedSession = session ? {
-    ...session,
-    rememberUntil: rememberUntil > Date.now() ? rememberUntil : Date.now() + SESSION_REMEMBER_MS,
-  } : null;
-  state.cloud.session = rememberedSession;
-  if (rememberedSession) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(rememberedSession));
+  state.cloud.session = session || null;
+  if (session) localStorage.setItem(CLOUD_SESSION_KEY, JSON.stringify(session));
   else localStorage.removeItem(CLOUD_SESSION_KEY);
   sessionStorage.removeItem(CLOUD_SESSION_KEY);
 }
 
-function sessionFromPayload(payload, rememberUntil = Date.now() + SESSION_REMEMBER_MS) {
+function sessionFromPayload(payload) {
   const raw = payload?.session || payload;
   const accessToken = raw?.access_token;
   const refreshToken = raw?.refresh_token;
@@ -2997,7 +3080,6 @@ function sessionFromPayload(payload, rememberUntil = Date.now() + SESSION_REMEMB
     refreshToken,
     user: { id: user.id, email: user.email || '' },
     expiresAt: Number.isFinite(expiry) ? expiry * 1000 : Date.now() + Number(raw.expires_in || 3600) * 1000,
-    rememberUntil,
   };
 }
 
@@ -3038,10 +3120,10 @@ function renderCloudAccountDialog() {
   elements.syncSignedIn.hidden = !session;
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
-    ? '这台设备保持登录两天；期间打开手机或电脑会自动同步。'
-    : '登录或注册后，这台设备会保持登录两天；打开、回到前台和每 10 分钟都会自动同步。';
-  elements.syncLastSession.textContent = session?.expiresAt
-    ? `登录记忆至 ${new Date(session.rememberUntil).toLocaleString('zh-CN')}`
+    ? '这台设备会持续保持登录；打开手机或电脑时会自动同步。'
+    : '登录或注册后会持续保持登录；打开、回到前台和每 10 分钟都会自动同步。';
+  elements.syncLastSession.textContent = session
+    ? '仅在你主动退出、清除站点数据或同步服务撤销会话后需要再次登录。'
     : '';
   elements.accountDialogCopy.textContent = session
     ? '同一邮箱登录手机和电脑后，日记会自动合并到这个账号。'
@@ -3164,7 +3246,6 @@ function sessionFromAuthCallback(params, user) {
     expiresAt: Number.isFinite(expiresAt)
       ? expiresAt * 1000
       : Date.now() + (Number.isFinite(expiresIn) ? expiresIn : 3600) * 1000,
-    rememberUntil: Date.now() + SESSION_REMEMBER_MS,
   };
 }
 
@@ -3221,28 +3302,36 @@ async function cloudAuthRequest(path, body) {
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload?.msg || payload?.error_description || payload?.message || `同步服务返回 ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload?.msg || payload?.error_description || payload?.message || `同步服务返回 ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 
 async function refreshCloudSession() {
   const existing = state.cloud.session;
   if (!existing?.refreshToken) return null;
-  const payload = await cloudAuthRequest('/auth/v1/token?grant_type=refresh_token', { refresh_token: existing.refreshToken });
-  const session = sessionFromPayload(payload, existing.rememberUntil);
-  if (!session) throw new Error('登录状态已过期，请重新登录');
-  storeCloudSession(session);
-  return session;
+  try {
+    const payload = await cloudAuthRequest('/auth/v1/token?grant_type=refresh_token', { refresh_token: existing.refreshToken });
+    const session = sessionFromPayload(payload);
+    if (!session) throw new Error('登录状态已过期，请重新登录');
+    storeCloudSession(session);
+    return session;
+  } catch (error) {
+    if ([400, 401, 403].includes(error?.status)) {
+      storeCloudSession(null);
+      stopCloudAutoSync();
+      renderCloudDialogs();
+    }
+    throw error;
+  }
 }
 
 async function activeCloudSession() {
   const session = state.cloud.session;
   if (!session) throw new Error('请先登录同步账号');
-  if (!session.rememberUntil || session.rememberUntil <= Date.now()) {
-    storeCloudSession(null);
-    stopCloudAutoSync();
-    throw new Error('登录记忆已到期，请重新登录');
-  }
   if (session.expiresAt && session.expiresAt > Date.now() + 60_000) return session;
   return refreshCloudSession();
 }
@@ -4158,39 +4247,43 @@ function bindEvents() {
     event.preventDefault();
     savePromptEditor();
   });
-  elements.aiOrganizePrompt.addEventListener('input', updateAiPromptMeta);
-  elements.aiSummaryPrompt.addEventListener('input', updateAiPromptMeta);
-  elements.restoreOrganizePrompt.addEventListener('click', () => {
-    elements.aiOrganizePrompt.value = DEFAULT_ORGANIZE_PROMPT;
-    updateAiPromptMeta();
-  });
-  elements.restoreSummaryPrompt.addEventListener('click', () => {
-    elements.aiSummaryPrompt.value = DEFAULT_SUMMARY_PROMPT;
-    updateAiPromptMeta();
-  });
+  elements.aiProviderPreset.addEventListener('change', () => applyAiProviderPreset(elements.aiProviderPreset.value));
+  elements.openOrganizePromptSettings.addEventListener('click', () => openPromptEditor('organize'));
+  elements.openSummaryPromptSettings.addEventListener('click', () => openPromptEditor('summary'));
   elements.aiConfigForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    const existing = readAiConfigDraft();
+    const provider = elements.aiProviderPreset.value;
+    const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
     const config = {
+      ...existing,
+      provider,
+      apiStyle: preset.apiStyle,
       endpoint: elements.aiEndpoint.value.trim(),
       model: elements.aiModel.value.trim(),
-      organizePrompt: elements.aiOrganizePrompt.value.trim() || DEFAULT_ORGANIZE_PROMPT,
-      summaryPrompt: elements.aiSummaryPrompt.value.trim() || DEFAULT_SUMMARY_PROMPT,
     };
     const apiKey = elements.aiApiKey.value.trim();
-    if (!config.endpoint || !config.model || !apiKey) return;
+    if (!isAiConfigComplete(config) || !apiKey) {
+      showToast('请填写有效的 API 地址、模型或部署名称和 API Key');
+      return;
+    }
     runtimeAiApiKey = apiKey;
     localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
     closeAiConfig();
     showToast(`模型配置已保存：${config.model}；Key 仅保留到本次页面会话结束`);
   });
   elements.removeAiConfig.addEventListener('click', () => {
-    localStorage.removeItem(AI_CONFIG_KEY);
+    const existing = readAiConfigDraft();
+    const prompts = {
+      ...(existing.organizePrompt ? { organizePrompt: existing.organizePrompt } : {}),
+      ...(existing.summaryPrompt ? { summaryPrompt: existing.summaryPrompt } : {}),
+    };
+    if (Object.keys(prompts).length) localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(prompts));
+    else localStorage.removeItem(AI_CONFIG_KEY);
     runtimeAiApiKey = '';
     elements.aiConfigForm.reset();
-    elements.aiOrganizePrompt.value = DEFAULT_ORGANIZE_PROMPT;
-    elements.aiSummaryPrompt.value = DEFAULT_SUMMARY_PROMPT;
-    updateAiPromptMeta();
-    showToast('模型配置已清除');
+    applyAiProviderPreset('deepseek');
+    showToast('模型连接已清除；提示词配置已保留');
   });
 }
 

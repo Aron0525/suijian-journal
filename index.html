@@ -37,9 +37,12 @@
             <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="backup-panel-button" class="top-text-action" type="button">备份</button>
             <span class="top-tool-divider" aria-hidden="true"></span>
-            <button id="cloud-sync-button" class="top-text-action" type="button">同步</button>
-            <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="model-config-button" class="top-text-action" type="button">模型配置</button>
+            <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="cloud-sync-button" class="top-text-action top-sync-action" type="button" aria-label="同步日记">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.2 9a7 7 0 0 1 11.6-2L20 9M4 15l2.2 2a7 7 0 0 0 11.6-2" /></svg>
+              <span>同步</span>
+            </button>
             <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="cloud-account-button" class="top-text-action account-action" type="button">账号</button>
           </div>
@@ -506,28 +509,36 @@
           </div>
           <button id="close-ai-config" type="button" class="icon-button" aria-label="关闭配置窗口">×</button>
         </div>
-        <p class="dialog-copy">填写已允许服务商的 HTTPS API 地址；可填基础地址，例如 https://api.deepseek.com，系统会自动补全 /chat/completions。API Key 仅保留在当前页面会话，刷新页面后需要重新填写。</p>
+        <p class="dialog-copy">选择服务商会自动填入官方 API 地址和推荐模型；也可选择 OpenAI 兼容 API 自行填写。基础地址会自动补全 /chat/completions。API Key 仅保留在当前页面会话，刷新页面后需要重新填写。</p>
+        <label>配置类型
+          <select id="ai-provider-preset" required>
+            <optgroup label="基础支持">
+              <option value="deepseek">DeepSeek</option>
+              <option value="openai-compatible">OpenAI 兼容 API</option>
+              <option value="azure-openai">Azure OpenAI</option>
+            </optgroup>
+            <optgroup label="预设平台">
+              <option value="qwen">千问 Qwen</option>
+              <option value="kimi">Kimi</option>
+              <option value="minimax">MiniMax</option>
+              <option value="glm">智谱 GLM</option>
+            </optgroup>
+          </select>
+        </label>
+        <p id="ai-provider-description" class="ai-provider-description" aria-live="polite"></p>
         <label>API 地址<input id="ai-endpoint" type="url" required placeholder="https://api.deepseek.com 或完整 /chat/completions 地址" autocomplete="url" /></label>
-        <label>模型名称<input id="ai-model" type="text" required placeholder="填写服务商提供的模型 ID" autocomplete="off" /></label>
+        <label><span id="ai-model-label">模型名称</span><input id="ai-model" type="text" required placeholder="填写服务商提供的模型 ID" autocomplete="off" /></label>
         <label>API Key<input id="ai-api-key" type="password" required placeholder="仅保留到关闭或刷新页面" autocomplete="off" /></label>
-        <div class="ai-prompt-grid" aria-label="AI 提示词设置">
-          <section class="ai-prompt-panel" aria-labelledby="organize-prompt-title">
-            <div class="ai-prompt-head">
-              <div><span class="prompt-kicker">写作时使用</span><strong id="organize-prompt-title">AI 整理提示词</strong></div>
-              <button id="restore-organize-prompt" type="button" class="quiet-button">恢复默认</button>
-            </div>
-            <textarea id="ai-organize-prompt" rows="6" aria-describedby="organize-prompt-help" placeholder="填写 AI 整理规则"></textarea>
-            <div class="ai-prompt-meta"><span id="organize-prompt-help">用于输入框的语言整理。可使用 {{输入内容}} 占位符，系统会自动替换为当前日记原文。</span><span id="ai-organize-prompt-count">0 字</span></div>
-          </section>
-          <section class="ai-prompt-panel" aria-labelledby="summary-prompt-title">
-            <div class="ai-prompt-head">
-              <div><span class="prompt-kicker">回顾时使用</span><strong id="summary-prompt-title">AI 汇总提示词</strong></div>
-              <button id="restore-summary-prompt" type="button" class="quiet-button">恢复默认</button>
-            </div>
-            <textarea id="ai-summary-prompt" rows="6" aria-describedby="summary-prompt-help" placeholder="填写 AI 汇总规则"></textarea>
-            <div class="ai-prompt-meta"><span id="summary-prompt-help">用于当天摘要和日期范围汇总。可使用 {{输入内容}} 占位符，系统会自动替换为所选日记。</span><span id="ai-summary-prompt-count">0 字</span></div>
-          </section>
-        </div>
+        <section class="ai-prompt-shortcuts" aria-label="AI 提示词设置">
+          <div class="ai-prompt-shortcut">
+            <div><span class="prompt-kicker">写作时使用</span><strong>AI 转写提示词</strong><p>单独打开后可查看、编辑和恢复默认提示词。</p></div>
+            <button id="open-organize-prompt-settings" type="button" class="quiet-button">编辑提示词</button>
+          </div>
+          <div class="ai-prompt-shortcut">
+            <div><span class="prompt-kicker">回顾时使用</span><strong>AI 总结提示词</strong><p>用于当天摘要和日期范围汇总，不会修改原始日记。</p></div>
+            <button id="open-summary-prompt-settings" type="button" class="quiet-button">编辑提示词</button>
+          </div>
+        </section>
         <p class="dialog-note">当前代理只转发本次请求，不在服务端写入 API Key；Key 不会写入浏览器存储。</p>
         <div class="dialog-actions">
           <button id="remove-ai-config" type="button" class="quiet-button">清除配置</button>
