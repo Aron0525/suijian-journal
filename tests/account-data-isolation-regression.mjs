@@ -35,8 +35,11 @@ assert.match(index, /id="journal-workspace"/, 'journal UI must be wrapped so it 
 assert.match(app, /const ACCOUNT_DATA_PREFIX = 'suijian-calendar-journal-account-v2:'/);
 assert.match(app, /const ACCOUNT_DRAFT_PREFIX = 'suijian-draft-account-v2:'/);
 assert.match(app, /const ACCOUNT_CLOUD_ACTIVITY_PREFIX = 'suijian-cloud-activity-v2:'/);
+assert.match(app, /const LEGACY_STORAGE_KEY = 'suijian-calendar-journal-v1';/);
 assert.match(app, /function journalDataStorageKey\(userId\)/);
 assert.match(app, /function accountDraftPrefix\(userId\)/);
+assert.match(app, /function hasStoredJournalContent\(data\)/);
+assert.match(app, /function migrateLegacyAccountData\(userId\)/);
 assert.match(app, /function activateJournalAccount\(userId\)/);
 assert.match(app, /function clearJournalAccount\(\)/);
 assert.match(app, /function renderJournalAccess\(\)/);
@@ -55,6 +58,7 @@ const context = vm.createContext({
   ACCOUNT_DATA_PREFIX: 'suijian-calendar-journal-account-v2:',
   ACCOUNT_DRAFT_PREFIX: 'suijian-draft-account-v2:',
   ACCOUNT_CLOUD_ACTIVITY_PREFIX: 'suijian-cloud-activity-v2:',
+  LEGACY_STORAGE_KEY: 'suijian-calendar-journal-v1',
   localStorage,
   clearTimeout() {},
   state: { data: null, cloud: { session: { user: { id: 'account-a' } }, activity: [], lastError: '', attachmentsSupported: null, tasksSupported: null, backupsSupported: null }, backup: { timer: 0 }, pastedDraft: { content: 'temporary' } },
@@ -82,6 +86,10 @@ vm.runInContext([
   extractFunction(app, 'accountCloudActivityKey'),
   extractFunction(app, 'loadCloudActivity'),
   extractFunction(app, 'activeJournalAccountId'),
+  extractFunction(app, 'normalizeStoredJournalData'),
+  extractFunction(app, 'readStoredJournalData'),
+  extractFunction(app, 'hasStoredJournalContent'),
+  extractFunction(app, 'migrateLegacyAccountData'),
   extractFunction(app, 'loadData'),
   extractFunction(app, 'persistData'),
   extractFunction(app, 'activateJournalAccount'),
@@ -96,6 +104,16 @@ assert.equal(context.persistData({ queue: false }), true, 'an authenticated acco
 assert.equal(store.has('suijian-calendar-journal-account-v2:account-a'), true);
 assert.equal(store.has('suijian-calendar-journal-account-v2:account-b'), false);
 assert.equal(JSON.parse(store.get('suijian-calendar-journal-account-v2:account-a')).cloudSync.accountId, 'account-a');
+
+store.set('suijian-calendar-journal-account-v2:legacy-account', JSON.stringify({ entries: [], summaries: {}, periodSummaries: [], tasks: [], cloudSync: { accountId: 'legacy-account', dirty: { entries: [], dailySummaries: [], periodSummaries: [], tasks: [] } } }));
+store.set('suijian-calendar-journal-v1', JSON.stringify({
+  entries: [{ id: 'legacy-a', content: 'legacy journal bound to account A' }],
+  summaries: {}, periodSummaries: [], tasks: [],
+  cloudSync: { accountId: 'legacy-account', dirty: { entries: [], dailySummaries: [], periodSummaries: [], tasks: [] } },
+}));
+assert.equal(context.migrateLegacyAccountData('legacy-account'), true, 'a legacy cache may migrate only into the account it was already bound to');
+assert.deepEqual(JSON.parse(JSON.stringify(context.loadData('legacy-account').entries.map((entry) => entry.id))), ['legacy-a']);
+assert.equal(context.migrateLegacyAccountData('account-b'), false, 'a legacy cache belonging to another account must not migrate into account B');
 
 context.state.cloud.session = { user: { id: 'account-b' } };
 context.activateJournalAccount('account-b');

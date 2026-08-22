@@ -4,6 +4,7 @@ const AI_CONFIG_KEY = 'suijian-ai-config-v1';
 const CLOUD_CONFIG_KEY = 'suijian-supabase-config-v1';
 const CLOUD_SESSION_KEY = 'suijian-supabase-session-v1';
 const ACCOUNT_CLOUD_ACTIVITY_PREFIX = 'suijian-cloud-activity-v2:';
+const LEGACY_STORAGE_KEY = 'suijian-calendar-journal-v1';
 const DEFAULT_SUPABASE_URL = 'https://ekotpodfgbkcykfcewmc.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_3TEgVHOwGufdfu_DHcvGLg_XD0tXovA';
 const MAX_PERIOD_INPUT_CHARS = 60000;
@@ -446,27 +447,64 @@ function normalizeCloudMeta(value) {
   };
 }
 
+function normalizeStoredJournalData(parsed) {
+  return {
+    entries: Array.isArray(parsed?.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments), tags: normalizeTags(entry?.tags), mood: normalizeMood(entry?.mood) })) : [],
+    summaries: parsed?.summaries && typeof parsed.summaries === 'object' ? parsed.summaries : {},
+    periodSummaries: Array.isArray(parsed?.periodSummaries) ? parsed.periodSummaries : [],
+    tasks: Array.isArray(parsed?.tasks) ? parsed.tasks.map(normalizeJournalTask).filter(Boolean) : [],
+    cloudSync: normalizeCloudMeta(parsed?.cloudSync),
+  };
+}
+
+function readStoredJournalData(storageKey) {
+  if (!storageKey) return null;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    return raw ? normalizeStoredJournalData(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasStoredJournalContent(data) {
+  return Boolean(data
+    && (data.entries.length || Object.keys(data.summaries).length || data.periodSummaries.length || data.tasks.length));
+}
+
+function migrateLegacyAccountData(userId) {
+  const accountId = validJournalAccountId(userId);
+  const storageKey = journalDataStorageKey(accountId);
+  if (!accountId || !storageKey) return false;
+
+  // A previous failed read may already have created an empty v2 cache. It has no
+  // content to preserve, so the verified legacy owner can still recover into it.
+  const currentData = readStoredJournalData(storageKey);
+  if (hasStoredJournalContent(currentData)) return false;
+
+  // The old app used one browser-wide key. Move it only when that cache already
+  // records the same authenticated owner; unbound or mismatched data stays hidden.
+  const legacyData = readStoredJournalData(LEGACY_STORAGE_KEY);
+  if (!legacyData?.cloudSync?.accountId || legacyData.cloudSync.accountId !== accountId) return false;
+
+  legacyData.cloudSync.accountId = accountId;
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(legacyData));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function loadData(userId) {
   const accountId = validJournalAccountId(userId);
   const storageKey = journalDataStorageKey(accountId);
   if (!storageKey) return emptyJournalData();
-  try {
-    const raw = localStorage.getItem(storageKey);
-    const parsed = raw ? JSON.parse(raw) : emptyJournalData();
-    const data = {
-      entries: Array.isArray(parsed.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments), tags: normalizeTags(entry?.tags), mood: normalizeMood(entry?.mood) })) : [],
-      summaries: parsed.summaries && typeof parsed.summaries === 'object' ? parsed.summaries : {},
-      periodSummaries: Array.isArray(parsed.periodSummaries) ? parsed.periodSummaries : [],
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks.map(normalizeJournalTask).filter(Boolean) : [],
-      cloudSync: normalizeCloudMeta(parsed.cloudSync),
-    };
-    // A cache is keyed by account and must also carry the same owner marker.
-    if (data.cloudSync.accountId && data.cloudSync.accountId !== accountId) return emptyJournalData();
-    data.cloudSync.accountId = accountId;
-    return data;
-  } catch {
-    return emptyJournalData();
-  }
+  const data = readStoredJournalData(storageKey);
+  // A cache is keyed by account and must also carry the same owner marker.
+  if (!data || (data.cloudSync.accountId && data.cloudSync.accountId !== accountId)) return emptyJournalData();
+  data.cloudSync.accountId = accountId;
+  return data;
 }
 
 function persistData({ queue = true } = {}) {
@@ -491,8 +529,10 @@ function activateJournalAccount(userId) {
     clearJournalAccount();
     return false;
   }
+  const restoredLegacyCache = migrateLegacyAccountData(accountId);
   state.data = loadData(accountId);
   state.cloud.activity = loadCloudActivity(accountId);
+  if (restoredLegacyCache) recordCloudActivity('已恢复此账号的旧版本本机日记，正在与云端核对', 'info');
   state.cloud.lastError = '';
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
@@ -3842,10 +3882,11 @@ async function pushCloudChanges() {
 }
 
 async function syncCloud({ quiet = false } = {}) {
-  if (!isCloudConfigured() || !state.cloud.session) return;
+  if (!isCloudConfigured() || !state.cloud.session) return false;
   if (state.cloud.syncing) return state.cloud.syncPromise;
   state.cloud.syncing = true;
   const task = (async () => {
+    let succeeded = false;
     renderCloudSyncDialog();
     try {
       const session = await activeCloudSession();
@@ -3863,8 +3904,7 @@ async function syncCloud({ quiet = false } = {}) {
       await saveDailyCloudBackup(session.user.id);
       state.cloud.lastError = '';
       persistData({ queue: false });
-      render();
-      renderCloudDialogs();
+      succeeded = true;
       if (!quiet) {
         recordCloudActivity('手动同步完成', 'success');
         showToast('云端内容已同步');
@@ -3874,7 +3914,6 @@ async function syncCloud({ quiet = false } = {}) {
       const isNewError = state.cloud.lastError !== message;
       state.cloud.lastError = message;
       if (!quiet || isNewError) recordCloudActivity(`同步失败：${message}`, 'error');
-      renderCloudSyncDialog();
       if (!quiet) {
         showToast(message.includes('stale update')
           ? '检测到另一台设备的较新版本：已停止上传以防覆盖，请先导出本机内容后刷新同步。'
@@ -3882,8 +3921,10 @@ async function syncCloud({ quiet = false } = {}) {
       }
     } finally {
       state.cloud.syncing = false;
+      render();
       renderCloudDialogs();
     }
+    return succeeded;
   })();
   state.cloud.syncPromise = task;
   try {
@@ -3928,6 +3969,7 @@ async function signInCloud() {
     storeCloudSession(session);
     activateJournalAccount(session.user.id);
     startCloudAutoSync();
+    render();
     elements.syncPassword.value = '';
     recordCloudActivity('登录成功', 'success');
     await syncCloud();
@@ -3956,6 +3998,7 @@ async function signUpCloud() {
       storeCloudSession(session);
       activateJournalAccount(session.user.id);
       startCloudAutoSync();
+      render();
       elements.syncPassword.value = '';
       recordCloudActivity('注册并登录成功', 'success');
       await syncCloud();
@@ -4000,6 +4043,8 @@ async function signOutCloud() {
 
 async function initializeCloudSync() {
   const restoredFromCallback = await restoreCloudSessionFromAuthCallback();
+  if (!restoredFromCallback && state.cloud.session) activateJournalAccount(state.cloud.session.user.id);
+  render();
   renderCloudDialogs();
   startCloudAutoSync();
   if (!restoredFromCallback && state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
@@ -4402,5 +4447,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260822-account-login-gate'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260822-account-recovery'));
 }
