@@ -40,8 +40,24 @@ jobs:
             echo '首个提交没有可比较的基线，跳过 Android 版本递增检查。'
             exit 0
           fi
-          if git diff --quiet "$BASE_SHA" HEAD -- android build-android-apk.sh capacitor.config.ts package.json package-lock.json scripts; then
-            exit 0
+          if git diff --quiet "$BASE_SHA" HEAD -- android ios build-android-apk.sh capacitor.config.ts mobile-version.json; then
+            node --input-type=module - "$BASE_SHA" <<'NODE'
+            import { execFileSync } from 'node:child_process';
+            import { readFile } from 'node:fs/promises';
+
+            const baseSha = process.argv[2];
+            const previous = JSON.parse(execFileSync('git', ['show', `${baseSha}:package.json`], { encoding: 'utf8' }));
+            const current = JSON.parse(await readFile('package.json', 'utf8'));
+            const nativeDependencies = (manifest) => Object.fromEntries(
+              Object.entries({ ...(manifest.dependencies || {}), ...(manifest.devDependencies || {}) })
+                .filter(([name]) => name.startsWith('@capacitor/') || name === '@capgo/capacitor-updater')
+                .sort(([first], [second]) => first.localeCompare(second)),
+            );
+            if (JSON.stringify(nativeDependencies(previous)) === JSON.stringify(nativeDependencies(current))) {
+              console.log('Android 原生依赖未变化，无需递增版本。');
+              process.exit(0);
+            }
+            NODE
           fi
 
           node --input-type=module - "$BASE_SHA" <<'NODE'
