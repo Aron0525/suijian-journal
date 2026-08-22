@@ -25,6 +25,7 @@ assert.match(workflow, /\[ "\$BASE_SHA" = '0{40}' \]/);
 assert.match(workflow, /git diff --quiet "\$BASE_SHA" HEAD -- android ios build-android-apk\.sh capacitor\.config\.ts mobile-version\.json/);
 assert.match(workflow, /name\.startsWith\('@capacitor\/'\) \|\| name === '@capgo\/capacitor-updater'/);
 assert.match(workflow, /Android 原生依赖未变化，无需递增版本。/);
+assert.match(workflow, /if node --input-type=module - "\$BASE_SHA" <<'NODE'[\s\S]+?process\.exit\(1\);\s+NODE\s+then\s+exit 0\s+fi/);
 assert.match(workflow, /node --input-type=module - "\$BASE_SHA" <<'NODE'/);
 assert.match(workflow, /current\.versionCode > previous\.versionCode/);
 assert.match(workflow, /node tests\/release-guard-regression\.mjs/);
