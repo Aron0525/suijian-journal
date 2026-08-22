@@ -50,6 +50,14 @@
         </div>
       </header>
 
+      <section id="auth-gate" class="auth-gate card" hidden aria-labelledby="auth-gate-title">
+        <p class="eyebrow">你的私人日记</p>
+        <h1 id="auth-gate-title">登录后查看和记录日记</h1>
+        <p>日记、草稿、附件和备份都按账号隔离。请先登录或注册账号。</p>
+        <button id="auth-gate-login" class="primary-button" type="button">登录或注册</button>
+      </section>
+
+      <div id="journal-workspace" class="journal-workspace">
       <section id="today-view" class="view active" aria-labelledby="today-title">
         <div class="hero-row">
           <div>
@@ -178,6 +186,7 @@
           </section>
         </section>
       </section>
+      </div>
     </main>
 
     <template id="entry-template">
@@ -567,6 +576,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260813-open-auto-update" defer></script>
+    <script src="./app.js?release=20260822-account-login-gate" defer></script>
   </body>
 </html>

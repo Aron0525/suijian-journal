@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v29';
-const RELEASE = '20260813-open-auto-update';
+const CACHE_NAME = 'suijian-pwa-v30';
+const RELEASE = '20260822-account-login-gate';
 const ASSETS = [
   './',
   './index.html',
