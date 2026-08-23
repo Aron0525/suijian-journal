@@ -1,6 +1,9 @@
 const ACCOUNT_DATA_PREFIX = 'suijian-calendar-journal-account-v2:';
 const ACCOUNT_DRAFT_PREFIX = 'suijian-draft-account-v2:';
-const AI_CONFIG_KEY = 'suijian-ai-config-v1';
+const LEGACY_AI_CONFIG_KEY = 'suijian-ai-config-v1';
+const ACCOUNT_AI_CONFIG_PREFIX = 'suijian-ai-config-account-v2:';
+const AI_SETTINGS_TABLE = 'ai_settings';
+const DESKTOP_APP_URL = 'https://aron0525.github.io/suijian-journal/';
 const CLOUD_CONFIG_KEY = 'suijian-supabase-config-v1';
 const CLOUD_SESSION_KEY = 'suijian-supabase-session-v1';
 const ACCOUNT_CLOUD_ACTIVITY_PREFIX = 'suijian-cloud-activity-v2:';
@@ -47,55 +50,55 @@ const AI_API_STYLES = Object.freeze({
 });
 const AI_PROVIDER_PRESETS = Object.freeze({
   deepseek: Object.freeze({
-    label: 'DeepSeek',
-    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
-    endpoint: 'https://api.deepseek.com',
-    model: 'deepseek-v4-flash',
-    description: 'DeepSeek 的 Chat Completions 接口；已预填官方地址与适合日记处理的 Flash 模型。',
+    label: 'DeepSeek', apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.deepseek.com', model: 'deepseek-v4-flash',
+    models: Object.freeze(['deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner']),
+    description: 'DeepSeek 官方 Chat Completions 地址已自动填入。',
+  }),
+  openai: Object.freeze({
+    label: 'OpenAI', apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.openai.com/v1', model: 'gpt-5-mini',
+    models: Object.freeze(['gpt-5-mini', 'gpt-4.1-mini', 'gpt-4o-mini']),
+    description: 'OpenAI 官方 API 地址已自动填入；可从推荐模型中选择或直接填写模型 ID。',
   }),
   'openai-compatible': Object.freeze({
-    label: 'OpenAI 兼容 API',
-    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
-    endpoint: '',
-    model: '',
-    description: '适用于 OpenAI 与提供 Chat Completions 兼容接口的平台，例如 SiliconFlow。填写该平台的基础地址和模型 ID。',
+    label: '自定义 OpenAI 兼容 API', apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: '', model: '', models: Object.freeze([]),
+    description: '填写服务商提供的 OpenAI 兼容基础地址和模型 ID。',
   }),
   'azure-openai': Object.freeze({
-    label: 'Azure OpenAI',
-    apiStyle: AI_API_STYLES.AZURE_OPENAI,
-    endpoint: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
-    model: 'YOUR-DEPLOYMENT-NAME',
-    description: '使用 Azure OpenAI 的 OpenAI v1 地址；模型名称填写 Azure 中已部署的 deployment 名称，代理会改用 api-key 请求头。',
+    label: 'Azure OpenAI', apiStyle: AI_API_STYLES.AZURE_OPENAI,
+    endpoint: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1', model: 'YOUR-DEPLOYMENT-NAME',
+    models: Object.freeze(['YOUR-DEPLOYMENT-NAME']),
+    description: '沿用 Azure OpenAI 的现有配置；模型名称填写 Azure 中的 deployment 名称。',
   }),
   qwen: Object.freeze({
-    label: '千问 Qwen',
-    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
-    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen-plus',
-    description: '百炼 OpenAI 兼容接口；已预填 Qwen Plus。若使用工作空间或其他地域，可直接改为服务商提供的基础地址。',
+    label: '千问 Qwen', apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus',
+    models: Object.freeze(['qwen-plus', 'qwen-turbo', 'qwen-max']),
+    description: '百炼 OpenAI 兼容地址已自动填入。',
   }),
   kimi: Object.freeze({
-    label: 'Kimi',
-    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
-    endpoint: 'https://api.moonshot.cn/v1',
-    model: 'kimi-k2.6',
-    description: 'Kimi 开放平台的 OpenAI 兼容接口；已预填 Kimi K2.6。',
+    label: 'Kimi', apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.moonshot.cn/v1', model: 'kimi-k2.6',
+    models: Object.freeze(['kimi-k2.6', 'moonshot-v1-8k']),
+    description: 'Kimi OpenAI 兼容地址已自动填入。',
   }),
   minimax: Object.freeze({
-    label: 'MiniMax',
-    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
-    endpoint: 'https://api.minimax.io/v1',
-    model: 'MiniMax-M2.7',
-    description: 'MiniMax 的 OpenAI 兼容接口；已预填 MiniMax-M2.7。',
+    label: 'MiniMax', apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.minimax.io/v1', model: 'MiniMax-M2.7',
+    models: Object.freeze(['MiniMax-M2.7', 'MiniMax-Text-01']),
+    description: 'MiniMax OpenAI 兼容地址已自动填入。',
   }),
   glm: Object.freeze({
-    label: '智谱 GLM',
-    apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
-    endpoint: 'https://api.z.ai/api/paas/v4',
-    model: 'glm-5.1',
-    description: '智谱 Z.AI 的 OpenAI 兼容接口；已预填 GLM-5.1。',
+    label: '智谱 GLM', apiStyle: AI_API_STYLES.OPENAI_COMPATIBLE,
+    endpoint: 'https://api.z.ai/api/paas/v4', model: 'glm-5.1',
+    models: Object.freeze(['glm-5.1', 'glm-4.7-flash']),
+    description: '智谱 GLM OpenAI 兼容地址已自动填入。',
   }),
 });
+const AI_COMPATIBLE_PLATFORM_KEYS = Object.freeze(['openai-compatible', 'qwen', 'kimi', 'minimax', 'glm', 'azure-openai']);
+
 const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
 要求：
@@ -148,7 +151,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, lastError: '' },
+  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '' },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -237,6 +240,9 @@ const elements = {
   searchHasAttachment: document.querySelector('#search-has-attachment'),
   clearSearchFilters: document.querySelector('#clear-search-filters'),
   searchResults: document.querySelector('#search-results'),
+  toolPanelButton: document.querySelector('#tool-panel-button'),
+  quickToolsDialog: document.querySelector('#quick-tools-dialog'),
+  closeQuickToolsDialog: document.querySelector('#close-quick-tools-dialog'),
   summaryPanelButton: document.querySelector('#summary-panel-button'),
   reviewPanelButton: document.querySelector('#review-panel-button'),
   reviewDialog: document.querySelector('#review-dialog'),
@@ -279,6 +285,8 @@ const elements = {
   accountDialog: document.querySelector('#account-dialog'),
   closeAccountDialog: document.querySelector('#close-account-dialog'),
   accountDialogCopy: document.querySelector('#account-dialog-copy'),
+  desktopAppUrl: document.querySelector('#desktop-app-url'),
+  copyDesktopAppUrl: document.querySelector('#copy-desktop-app-url'),
   mobileUpdatePanel: document.querySelector('#mobile-update-panel'),
   mobileAppVersion: document.querySelector('#mobile-app-version'),
   mobileAppUpdateStatus: document.querySelector('#mobile-app-update-status'),
@@ -316,11 +324,14 @@ const elements = {
   modelConfigButton: document.querySelector('#model-config-button'),
   aiConfigDialog: document.querySelector('#ai-config-dialog'),
   aiConfigForm: document.querySelector('#ai-config-form'),
-  aiProviderPreset: document.querySelector('#ai-provider-preset'),
+  aiInterfaceType: document.querySelector('#ai-interface-type'),
+  aiPlatformField: document.querySelector('#ai-platform-field'),
+  aiPlatformPreset: document.querySelector('#ai-platform-preset'),
   aiProviderDescription: document.querySelector('#ai-provider-description'),
   aiEndpoint: document.querySelector('#ai-endpoint'),
   aiModelLabel: document.querySelector('#ai-model-label'),
   aiModel: document.querySelector('#ai-model'),
+  aiModelOptions: document.querySelector('#ai-model-options'),
   aiApiKey: document.querySelector('#ai-api-key'),
   openOrganizePromptSettings: document.querySelector('#open-organize-prompt-settings'),
   openSummaryPromptSettings: document.querySelector('#open-summary-prompt-settings'),
@@ -530,6 +541,7 @@ function activateJournalAccount(userId) {
     return false;
   }
   const restoredLegacyCache = migrateLegacyAccountData(accountId);
+  runtimeAiApiKey = '';
   state.data = loadData(accountId);
   state.cloud.activity = loadCloudActivity(accountId);
   if (restoredLegacyCache) recordCloudActivity('已恢复此账号的旧版本本机日记，正在与云端核对', 'info');
@@ -537,12 +549,15 @@ function activateJournalAccount(userId) {
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
   state.cloud.backupsSupported = null;
+  state.cloud.aiConfigSupported = null;
+  state.cloud.aiConfigError = '';
   state.pastedDraft = null;
   state.editingEntryId = '';
   return true;
 }
 
 function clearJournalAccount() {
+  runtimeAiApiKey = '';
   clearTimeout(draftTimer);
   clearTimeout(state.cloud.syncTimer);
   clearTimeout(state.backup.timer);
@@ -552,6 +567,8 @@ function clearJournalAccount() {
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
   state.cloud.backupsSupported = null;
+  state.cloud.aiConfigSupported = null;
+  state.cloud.aiConfigError = '';
   state.pastedDraft = null;
   state.editingEntryId = '';
 }
@@ -2291,6 +2308,7 @@ function aiProviderKeyForConfig(config = {}) {
   if (AI_PROVIDER_PRESETS[config?.provider]) return config.provider;
   const endpoint = String(config?.endpoint || '').toLowerCase();
   if (endpoint.includes('api.deepseek.com')) return 'deepseek';
+  if (endpoint.includes('api.openai.com')) return 'openai';
   if (endpoint.includes('dashscope.aliyuncs.com') || endpoint.includes('maas.aliyuncs.com')) return 'qwen';
   if (endpoint.includes('api.moonshot.cn') || endpoint.includes('api.moonshot.ai')) return 'kimi';
   if (endpoint.includes('api.minimax.io')) return 'minimax';
@@ -2299,29 +2317,69 @@ function aiProviderKeyForConfig(config = {}) {
   return 'openai-compatible';
 }
 
+function aiInterfaceTypeForProvider(provider) {
+  if (provider === 'deepseek') return 'deepseek';
+  if (provider === 'openai') return 'openai';
+  return 'openai-compatible';
+}
+
 function normalizeAiConfig(config = {}) {
   const provider = aiProviderKeyForConfig(config);
-  const preset = AI_PROVIDER_PRESETS[provider];
+  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
+  const updatedAt = typeof config?.updatedAt === 'string' && Number.isFinite(Date.parse(config.updatedAt))
+    ? config.updatedAt
+    : '';
   return {
-    ...config,
+    ...(config && typeof config === 'object' ? config : {}),
     provider,
     apiStyle: config?.apiStyle === AI_API_STYLES.AZURE_OPENAI || preset.apiStyle === AI_API_STYLES.AZURE_OPENAI
       ? AI_API_STYLES.AZURE_OPENAI
       : AI_API_STYLES.OPENAI_COMPATIBLE,
     endpoint: String(config?.endpoint || '').trim(),
     model: String(config?.model || '').trim(),
+    updatedAt,
   };
 }
 
-function readAiConfigDraft() {
+function aiConfigStorageKey(userId = activeJournalAccountId()) {
+  const accountId = validJournalAccountId(userId);
+  return accountId ? `${ACCOUNT_AI_CONFIG_PREFIX}${accountId}` : '';
+}
+
+function readLegacyAiConfigDraft() {
   try {
-    const config = JSON.parse(localStorage.getItem(AI_CONFIG_KEY));
-    if (!config || typeof config !== 'object') return normalizeAiConfig();
+    const config = JSON.parse(localStorage.getItem(LEGACY_AI_CONFIG_KEY));
+    if (!config || typeof config !== 'object') return null;
     // Migrate older installations away from storing an API key in localStorage.
     const { apiKey: legacyApiKey, ...safeConfig } = config;
-    if (legacyApiKey) localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(safeConfig));
+    if (legacyApiKey) localStorage.setItem(LEGACY_AI_CONFIG_KEY, JSON.stringify(safeConfig));
     return normalizeAiConfig(safeConfig);
-  } catch { return normalizeAiConfig(); }
+  } catch {
+    return null;
+  }
+}
+
+function readAiConfigDraft() {
+  const storageKey = aiConfigStorageKey();
+  if (!storageKey) return normalizeAiConfig();
+  try {
+    const config = JSON.parse(localStorage.getItem(storageKey));
+    return config && typeof config === 'object' ? normalizeAiConfig(config) : normalizeAiConfig();
+  } catch {
+    return normalizeAiConfig();
+  }
+}
+
+function writeAiConfigDraft(config) {
+  const storageKey = aiConfigStorageKey();
+  if (!storageKey) return false;
+  try {
+    const { apiKey, ...safeConfig } = normalizeAiConfig(config);
+    localStorage.setItem(storageKey, JSON.stringify(safeConfig));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isAiConfigComplete(config) {
@@ -2335,29 +2393,68 @@ function getAiConfig() {
   return isAiConfigComplete(config) && runtimeAiApiKey ? { ...config, apiKey: runtimeAiApiKey } : null;
 }
 
-function updateAiProviderUi(provider = elements.aiProviderPreset.value) {
+function selectedAiProvider() {
+  const interfaceType = elements.aiInterfaceType.value;
+  if (interfaceType === 'deepseek' || interfaceType === 'openai') return interfaceType;
+  const preset = elements.aiPlatformPreset.value;
+  return AI_COMPATIBLE_PLATFORM_KEYS.includes(preset) ? preset : 'openai-compatible';
+}
+
+function renderAiPlatformOptions(interfaceType, selectedProvider = '') {
+  const visible = interfaceType === 'openai-compatible';
+  elements.aiPlatformField.hidden = !visible;
+  elements.aiPlatformPreset.disabled = !visible;
+  elements.aiPlatformPreset.replaceChildren();
+  if (!visible) return;
+  const preferred = AI_COMPATIBLE_PLATFORM_KEYS.includes(selectedProvider) ? selectedProvider : 'openai-compatible';
+  AI_COMPATIBLE_PLATFORM_KEYS.forEach((provider) => {
+    const option = document.createElement('option');
+    option.value = provider;
+    option.textContent = AI_PROVIDER_PRESETS[provider].label;
+    option.selected = provider === preferred;
+    elements.aiPlatformPreset.append(option);
+  });
+}
+
+function renderAiModelOptions(provider) {
+  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
+  elements.aiModelOptions.replaceChildren();
+  (preset.models || []).forEach((model) => {
+    const option = document.createElement('option');
+    option.value = model;
+    elements.aiModelOptions.append(option);
+  });
+}
+
+function updateAiProviderUi(provider = selectedAiProvider()) {
   const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
   const isAzure = preset.apiStyle === AI_API_STYLES.AZURE_OPENAI;
   elements.aiProviderDescription.textContent = preset.description;
   elements.aiEndpoint.placeholder = preset.endpoint || 'https://api.example.com/v1 或完整 /chat/completions 地址';
   elements.aiModelLabel.textContent = isAzure ? 'Azure 部署名称' : '模型名称';
-  elements.aiModel.placeholder = isAzure ? '填写 Azure 中已部署的模型名称' : (preset.model || '填写服务商提供的模型 ID');
+  elements.aiModel.placeholder = isAzure ? '填写 Azure 中已部署的模型名称' : (preset.model || '选择推荐模型或手动填写模型 ID');
+  renderAiModelOptions(provider);
 }
 
-function applyAiProviderPreset(provider) {
-  const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
-  elements.aiProviderPreset.value = provider in AI_PROVIDER_PRESETS ? provider : 'openai-compatible';
-  elements.aiEndpoint.value = preset.endpoint;
-  elements.aiModel.value = preset.model;
-  updateAiProviderUi(elements.aiProviderPreset.value);
+function applyAiProviderPreset(provider, { preserveValues = false } = {}) {
+  const normalizedProvider = AI_PROVIDER_PRESETS[provider] ? provider : 'openai-compatible';
+  const preset = AI_PROVIDER_PRESETS[normalizedProvider];
+  const interfaceType = aiInterfaceTypeForProvider(normalizedProvider);
+  elements.aiInterfaceType.value = interfaceType;
+  renderAiPlatformOptions(interfaceType, normalizedProvider);
+  if (!preserveValues) {
+    elements.aiEndpoint.value = preset.endpoint;
+    elements.aiModel.value = preset.model;
+  }
+  updateAiProviderUi(normalizedProvider);
 }
 
 function openAiConfig() {
   const config = readAiConfigDraft();
   const provider = aiProviderKeyForConfig(config);
-  elements.aiProviderPreset.value = provider;
-  elements.aiEndpoint.value = config.endpoint;
-  elements.aiModel.value = config.model;
+  applyAiProviderPreset(provider, { preserveValues: true });
+  elements.aiEndpoint.value = config.endpoint || AI_PROVIDER_PRESETS[provider].endpoint;
+  elements.aiModel.value = config.model || AI_PROVIDER_PRESETS[provider].model;
   elements.aiApiKey.value = runtimeAiApiKey;
   updateAiProviderUi(provider);
   if (typeof elements.aiConfigDialog.showModal === 'function') elements.aiConfigDialog.showModal();
@@ -2475,6 +2572,23 @@ function closeSearchDialog() {
   closeWorkspaceDialog(elements.searchDialog);
 }
 
+function openQuickToolsDialog() {
+  openWorkspaceDialog(elements.quickToolsDialog, elements.summaryPanelButton);
+}
+
+function closeQuickToolsDialog() {
+  closeWorkspaceDialog(elements.quickToolsDialog);
+}
+
+function copyDesktopAppUrl() {
+  const copy = navigator.clipboard?.writeText(DESKTOP_APP_URL);
+  if (copy) {
+    copy.then(() => showToast('电脑端网址已复制')).catch(() => showToast(DESKTOP_APP_URL));
+    return;
+  }
+  showToast(DESKTOP_APP_URL);
+}
+
 function entryForEditing(id) {
   return state.data.entries.find((entry) => entry.id === id && !entry.deletedAt) || null;
 }
@@ -2553,9 +2667,14 @@ function savePromptEditor() {
   const type = state.promptEditorType;
   const config = readAiConfigDraft();
   config[promptConfigKey(type)] = value || promptFor(type, null);
-  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
+  config.updatedAt = new Date().toISOString();
+  if (!writeAiConfigDraft(config)) {
+    showToast('请先登录账号后再保存提示词');
+    return;
+  }
   closePromptEditor();
-  showToast(`${promptTitle(type)}已保存`);
+  void syncCloudAiSettings({ preferLocal: true });
+  showToast(`${promptTitle(type)}已保存，并会同步到同一账号的其他设备`);
 }
 
 function buildSummaryRequest(config, content) {
@@ -3267,13 +3386,13 @@ function renderCloudAccountDialog() {
   elements.syncSignedIn.hidden = !session;
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
-    ? '这台设备会持续保持登录；打开手机或电脑时会自动同步。'
+    ? '这台设备会持续保持登录；打开手机或电脑时，日记和模型配置都会自动同步。'
     : '登录或注册后会持续保持登录；打开、回到前台和每 10 分钟都会自动同步。';
   elements.syncLastSession.textContent = session
     ? '仅在你主动退出、清除站点数据或同步服务撤销会话后需要再次登录。'
     : '';
   elements.accountDialogCopy.textContent = session
-    ? '同一邮箱登录手机和电脑后，日记会自动合并到这个账号。'
+    ? '同一邮箱登录手机和电脑后，日记与模型配置都会自动合并到这个账号。'
     : '注册一个账号后，即可把日记同步到其他设备。';
   elements.cloudAccountButton.textContent = session ? '账号' : '登录';
   elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
@@ -3519,6 +3638,75 @@ async function cloudRequest(path, options = {}, retry = true) {
   const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.message || payload?.hint || payload?.error || `同步服务返回 ${response.status}`);
   return payload;
+}
+
+function cloudAiSettingsToLocal(record) {
+  const payload = record?.config && typeof record.config === 'object' && !Array.isArray(record.config) ? record.config : {};
+  const { apiKey, ...rawConfig } = payload;
+  const config = normalizeAiConfig({ ...rawConfig, updatedAt: record?.updated_at || rawConfig.updatedAt || '' });
+  return { config, apiKey: typeof apiKey === 'string' ? apiKey : '' };
+}
+
+function applyCloudAiSettings(record) {
+  const { config, apiKey } = cloudAiSettingsToLocal(record);
+  if (!config.updatedAt) return false;
+  runtimeAiApiKey = apiKey;
+  writeAiConfigDraft(config);
+  return true;
+}
+
+async function pullCloudAiSettings() {
+  try {
+    const records = await cloudRequest(`/rest/v1/${AI_SETTINGS_TABLE}?select=config,updated_at&limit=1`);
+    state.cloud.aiConfigSupported = true;
+    state.cloud.aiConfigError = '';
+    return Array.isArray(records) && records.length ? records[0] : null;
+  } catch (error) {
+    state.cloud.aiConfigSupported = false;
+    state.cloud.aiConfigError = error instanceof Error ? error.message : '模型配置同步失败';
+    return null;
+  }
+}
+
+function cloudAiSettingsPayload(config, apiKey) {
+  const { apiKey: ignored, ...safeConfig } = normalizeAiConfig(config);
+  return {
+    user_id: state.cloud.session.user.id,
+    config: { ...safeConfig, apiKey: String(apiKey || '') },
+    updated_at: safeConfig.updatedAt || new Date().toISOString(),
+  };
+}
+
+async function syncCloudAiSettings({ preferLocal = false, clearApiKey = false } = {}) {
+  if (!isCloudConfigured() || !state.cloud.session) return false;
+  const local = readAiConfigDraft();
+  const remote = await pullCloudAiSettings();
+  const remoteSettings = remote ? cloudAiSettingsToLocal(remote) : null;
+  const localTime = cloudUpdatedAt(local);
+  const remoteTime = cloudUpdatedAt(remote);
+
+  if (remote && !preferLocal && (remoteTime >= localTime || !local.updatedAt)) {
+    return applyCloudAiSettings(remote);
+  }
+  if (!local.updatedAt) return Boolean(remote);
+
+  const apiKey = clearApiKey ? '' : (runtimeAiApiKey || remoteSettings?.apiKey || '');
+  try {
+    const saved = await cloudRequest(`/rest/v1/${AI_SETTINGS_TABLE}?on_conflict=user_id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify([cloudAiSettingsPayload(local, apiKey)]),
+    });
+    state.cloud.aiConfigSupported = true;
+    state.cloud.aiConfigError = '';
+    const record = Array.isArray(saved) ? saved[0] : null;
+    if (record) applyCloudAiSettings(record);
+    return true;
+  } catch (error) {
+    state.cloud.aiConfigSupported = false;
+    state.cloud.aiConfigError = error instanceof Error ? error.message : '模型配置同步失败';
+    return false;
+  }
 }
 
 function cloudUpdatedAt(item) {
@@ -3899,6 +4087,7 @@ async function syncCloud({ quiet = false } = {}) {
         markAllCloudDirty();
         persistData({ queue: false });
       }
+      await syncCloudAiSettings();
       await pullCloudData();
       await pushCloudChanges();
       await saveDailyCloudBackup(session.user.id);
@@ -4251,8 +4440,17 @@ function bindEvents() {
     state.view = link.dataset.view;
     render();
   }));
-  elements.summaryPanelButton.addEventListener('click', openPeriodSummaryDialog);
-  elements.reviewPanelButton.addEventListener('click', openReviewDialog);
+  elements.toolPanelButton.addEventListener('click', openQuickToolsDialog);
+  elements.closeQuickToolsDialog.addEventListener('click', closeQuickToolsDialog);
+  closeDialogOnBackdrop(elements.quickToolsDialog, closeQuickToolsDialog);
+  elements.summaryPanelButton.addEventListener('click', () => {
+    closeQuickToolsDialog();
+    openPeriodSummaryDialog();
+  });
+  elements.reviewPanelButton.addEventListener('click', () => {
+    closeQuickToolsDialog();
+    openReviewDialog();
+  });
   elements.closeReviewDialog.addEventListener('click', closeReviewDialog);
   closeDialogOnBackdrop(elements.reviewDialog, closeReviewDialog);
   elements.reviewYear.addEventListener('change', () => {
@@ -4270,7 +4468,10 @@ function bindEvents() {
   elements.reminderSnooze.addEventListener('click', () => void snoozeReminder());
   elements.reminderSkipToday.addEventListener('click', () => void skipReminderToday());
   elements.searchPanelButton.addEventListener('click', openSearchDialog);
-  elements.backupPanelButton.addEventListener('click', openBackupDialog);
+  elements.backupPanelButton.addEventListener('click', () => {
+    closeQuickToolsDialog();
+    openBackupDialog();
+  });
   elements.closeBackupDialog.addEventListener('click', closeBackupDialog);
   closeDialogOnBackdrop(elements.backupDialog, closeBackupDialog);
   elements.backupExportJson.addEventListener('click', exportData);
@@ -4280,6 +4481,7 @@ function bindEvents() {
   elements.cloudAccountButton.addEventListener('click', openCloudAccountDialog);
   elements.authGateLogin.addEventListener('click', openCloudAccountDialog);
   elements.closeAccountDialog.addEventListener('click', closeCloudAccountDialog);
+  elements.copyDesktopAppUrl.addEventListener('click', copyDesktopAppUrl);
   elements.checkMobileUpdate.addEventListener('click', () => void checkMobileUpdatesManually());
   elements.downloadMobileUpdate.addEventListener('click', openNativeInstallerDownload);
   elements.closeSyncDialog.addEventListener('click', closeCloudSyncDialog);
@@ -4380,7 +4582,10 @@ function bindEvents() {
   elements.clearSearchFilters.addEventListener('click', () => {
     elements.searchInput.value = ''; elements.searchStartDate.value = ''; elements.searchEndDate.value = ''; elements.searchTagFilter.value = ''; elements.searchMoodFilter.value = ''; elements.searchHasAttachment.checked = false; renderSearchResults();
   });
-  elements.exportButton.addEventListener('click', exportData);
+  elements.exportButton.addEventListener('click', () => {
+    closeQuickToolsDialog();
+    exportData();
+  });
   elements.importButton?.addEventListener('click', () => elements.importInput.click());
   elements.importInput.addEventListener('change', (event) => {
     const [file] = event.target.files;
@@ -4400,13 +4605,19 @@ function bindEvents() {
     event.preventDefault();
     savePromptEditor();
   });
-  elements.aiProviderPreset.addEventListener('change', () => applyAiProviderPreset(elements.aiProviderPreset.value));
+  elements.aiInterfaceType.addEventListener('change', () => {
+    const provider = elements.aiInterfaceType.value === 'deepseek'
+      ? 'deepseek'
+      : (elements.aiInterfaceType.value === 'openai' ? 'openai' : 'openai-compatible');
+    applyAiProviderPreset(provider);
+  });
+  elements.aiPlatformPreset.addEventListener('change', () => applyAiProviderPreset(elements.aiPlatformPreset.value));
   elements.openOrganizePromptSettings.addEventListener('click', () => openPromptEditor('organize'));
   elements.openSummaryPromptSettings.addEventListener('click', () => openPromptEditor('summary'));
   elements.aiConfigForm.addEventListener('submit', (event) => {
     event.preventDefault();
     const existing = readAiConfigDraft();
-    const provider = elements.aiProviderPreset.value;
+    const provider = selectedAiProvider();
     const preset = AI_PROVIDER_PRESETS[provider] || AI_PROVIDER_PRESETS['openai-compatible'];
     const config = {
       ...existing,
@@ -4414,29 +4625,35 @@ function bindEvents() {
       apiStyle: preset.apiStyle,
       endpoint: elements.aiEndpoint.value.trim(),
       model: elements.aiModel.value.trim(),
+      updatedAt: new Date().toISOString(),
     };
     const apiKey = elements.aiApiKey.value.trim();
     if (!isAiConfigComplete(config) || !apiKey) {
-      showToast('请填写有效的 API 地址、模型或部署名称和 API Key');
+      showToast('请填写有效的 API 地址、模型名称和 API Key');
       return;
     }
     runtimeAiApiKey = apiKey;
-    localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
+    if (!writeAiConfigDraft(config)) {
+      showToast('请先登录账号后再保存模型配置');
+      return;
+    }
     closeAiConfig();
-    showToast(`模型配置已保存：${config.model}；Key 仅保留到本次页面会话结束`);
+    void syncCloudAiSettings({ preferLocal: true });
+    showToast(`模型配置已保存：${config.model}；会同步到同一账号的其他设备`);
   });
   elements.removeAiConfig.addEventListener('click', () => {
     const existing = readAiConfigDraft();
-    const prompts = {
+    const cleared = normalizeAiConfig({
       ...(existing.organizePrompt ? { organizePrompt: existing.organizePrompt } : {}),
       ...(existing.summaryPrompt ? { summaryPrompt: existing.summaryPrompt } : {}),
-    };
-    if (Object.keys(prompts).length) localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(prompts));
-    else localStorage.removeItem(AI_CONFIG_KEY);
+      provider: 'deepseek', endpoint: '', model: '', updatedAt: new Date().toISOString(),
+    });
     runtimeAiApiKey = '';
+    writeAiConfigDraft(cleared);
+    void syncCloudAiSettings({ preferLocal: true, clearApiKey: true });
     elements.aiConfigForm.reset();
     applyAiProviderPreset('deepseek');
-    showToast('模型连接已清除；提示词配置已保留');
+    showToast('模型连接已清除；提示词配置已保留并同步');
   });
 }
 
@@ -4447,5 +4664,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260822-account-recovery'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260822-account-ai-sync'));
 }
