@@ -192,6 +192,32 @@ create policy "delete own journal backups" on public.journal_backups
 for delete to authenticated
 using (auth.uid() = user_id);
 
+-- API configuration is stored per authenticated account so the same model and
+-- prompts can follow the user between the web and Android clients. The config
+-- includes the user-supplied provider key; RLS permits that row only to its owner.
+create table if not exists public.ai_settings (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  config jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (jsonb_typeof(config) = 'object')
+);
+
+drop trigger if exists ai_settings_touch_updated_at on public.ai_settings;
+drop trigger if exists ai_settings_reject_stale_update on public.ai_settings;
+create trigger ai_settings_reject_stale_update before update on public.ai_settings
+for each row execute function public.reject_stale_update();
+create trigger ai_settings_touch_updated_at before update on public.ai_settings
+for each row execute function public.touch_updated_at();
+
+alter table public.ai_settings enable row level security;
+grant select, insert, update, delete on table public.ai_settings to authenticated;
+drop policy if exists "own ai settings" on public.ai_settings;
+create policy "own ai settings" on public.ai_settings
+for all to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'journal-attachments',

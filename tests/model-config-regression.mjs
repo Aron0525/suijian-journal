@@ -17,24 +17,27 @@ const refreshSessionSource = app.match(/async function refreshCloudSession\(\) \
 assert.match(refreshSessionSource, /error\?\.status/);
 assert.match(refreshSessionSource, /storeCloudSession\(null\)/);
 
-// 配置选择器既支持通用协议，也提供常用平台的可直接套用预设。
-assert.match(index, /id="ai-provider-preset"/);
-assert.match(index, /<span id="ai-model-label">模型名称<\/span><input id="ai-model"/);
-for (const preset of ['deepseek', 'openai-compatible', 'azure-openai', 'qwen', 'kimi', 'minimax', 'glm']) {
-  assert.match(index, new RegExp(`value="${preset}"`));
+// 接口类型固定为三类；OpenAI-compatible 下提供平台地址与模型预设。
+assert.match(index, /id="ai-interface-type"/);
+for (const type of ['deepseek', 'openai', 'openai-compatible']) {
+  assert.match(index, new RegExp(`value="${type}"`));
+}
+assert.match(index, /id="ai-platform-preset"/);
+for (const preset of ['openai-compatible', 'qwen', 'kimi', 'minimax', 'glm']) {
   assert.match(app, new RegExp(`['"]${preset}['"]`));
 }
+assert.match(index, /id="ai-model"[^>]*list="ai-model-options"/);
+assert.match(index, /<datalist id="ai-model-options"><\/datalist>/);
+assert.match(app, /function aiInterfaceTypeForProvider\(provider\)/);
+assert.match(app, /function renderAiPlatformOptions\(interfaceType/);
+assert.match(app, /function renderAiModelOptions\(provider/);
+assert.match(app, /function selectedAiProvider\(\)/);
 assert.match(app, /const AI_PROVIDER_PRESETS/);
 assert.match(app, /apiStyle/);
 assert.match(index, /id="open-organize-prompt-settings"/);
 assert.match(index, /id="open-summary-prompt-settings"/);
 assert.doesNotMatch(index, /id="ai-organize-prompt"/);
 assert.doesNotMatch(index, /id="ai-summary-prompt"/);
-
-// 同步操作保持直接同步，但在模型配置和账号之间以图标文字按钮呈现。
-const topTools = index.match(/<div class="top-tools">([\s\S]+?)<\/div>/)?.[1] ?? '';
-assert.match(topTools, /model-config-button[\s\S]*cloud-sync-button[\s\S]*cloud-account-button/);
-assert.match(topTools, /id="cloud-sync-button"[^>]*>[\s\S]*?<svg[\s\S]*?<span>同步<\/span>/);
 
 // Azure OpenAI 使用 api-key header；其余 OpenAI-compatible provider 使用 Bearer header。
 assert.match(edge, /apiStyle === 'azure-openai'/);

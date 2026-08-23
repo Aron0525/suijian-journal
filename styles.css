@@ -533,3 +533,56 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 
 .cloud-daily-backup-note { margin: 12px 0 4px; color: var(--ink-soft); font-size: 11px; line-height: 1.7; }
 .cloud-daily-backup-status { display: inline-block; margin-bottom: 6px; }
+
+/* 紧凑顶部工具栏与模型配置 */
+.top-tools { gap: 0; flex-wrap: nowrap; }
+.quick-tools-dialog { width: min(520px, calc(100% - 32px)); }
+.quick-tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 20px; }
+.quick-tool-button { min-height: 72px; padding: 12px; border: 1px solid rgba(66,99,93,.24); border-radius: 3px 16px 3px 3px; color: var(--ink); background: rgba(255,255,255,.44); font: inherit; font-family: var(--font-serif); font-size: 16px; text-align: left; transition: color .2s, border-color .2s, background .2s; }
+.quick-tool-button:hover { border-color: var(--clay); color: var(--clay-deep); background: rgba(198,109,76,.08); }
+.ai-config-dialog { max-height: calc(100dvh - 24px); }
+.ai-config-dialog form { max-height: calc(100dvh - 24px); overflow: hidden; padding: 20px 22px; }
+.ai-config-dialog .dialog-head { margin-bottom: 8px; }
+.ai-config-dialog .dialog-copy { margin: 0; line-height: 1.52; }
+.ai-config-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ai-config-dialog label { margin-top: 10px; }
+.ai-config-fields label { margin-top: 10px; }
+.ai-provider-description { min-height: 0; margin: 8px 0 0; padding: 7px 10px; line-height: 1.48; }
+.ai-config-dialog textarea { min-height: 92px; max-height: 92px; resize: none; line-height: 1.45; }
+.ai-prompt-shortcuts { gap: 7px; margin-top: 10px; }
+.ai-prompt-shortcut { gap: 10px; padding: 9px 11px; }
+.ai-prompt-shortcut p { margin-top: 3px; line-height: 1.4; }
+.ai-prompt-shortcut .quiet-button { min-height: 30px; }
+.ai-config-dialog .dialog-note { margin: 9px 0 0; padding-top: 8px; line-height: 1.45; }
+.ai-config-dialog .dialog-actions { margin-top: 10px; }
+.desktop-app-card p { margin: -3px 0 8px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.desktop-app-url { display: block; overflow-wrap: anywhere; color: var(--clay-deep); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; }
+.desktop-app-card .quiet-button { min-height: 32px; margin-top: 9px; padding: 5px 0; font-size: 11px; }
+
+@media (max-width: 760px) {
+  .top-tools { justify-content: space-between; flex-wrap: nowrap; }
+  .top-text-action, .top-search-action { min-width: 40px; min-height: 40px; padding: 7px 5px; font-size: 11px; }
+  .top-search-action { width: 40px; height: 40px; }
+  .top-tool-divider { height: 14px; }
+  .quick-tools-dialog { width: min(100% - 24px, 520px); }
+  .quick-tools-dialog .workspace-dialog-body { padding: 20px; }
+  .quick-tools-grid { grid-template-columns: 1fr; gap: 7px; margin-top: 14px; }
+  .quick-tool-button { min-height: 45px; padding: 10px 12px; font-size: 14px; }
+  .ai-config-dialog { width: min(100% - 20px, 480px); }
+  .ai-config-dialog form { padding: 13px 16px; }
+  .ai-config-dialog .dialog-head { align-items: center; margin-bottom: 4px; }
+  .ai-config-dialog .dialog-head .eyebrow, .ai-config-dialog .dialog-copy, .ai-provider-description, .ai-config-dialog .dialog-note { display: none; }
+  .ai-config-dialog .dialog-head h2 { font-size: 22px; }
+  .ai-config-dialog label { gap: 4px; font-size: 11px; }
+  .ai-config-dialog input, .ai-config-dialog select { min-height: 36px; padding: 6px 9px; font-size: 13px; }
+  .ai-config-fields { gap: 8px; }
+  .ai-config-dialog label, .ai-config-fields label { margin-top: 5px; }
+  .ai-prompt-shortcuts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+  .ai-prompt-shortcut { align-items: center; min-height: 42px; gap: 5px; padding: 6px 7px; }
+  .ai-prompt-shortcut .prompt-kicker, .ai-prompt-shortcut p { display: none; }
+  .ai-prompt-shortcut strong { display: block; font-size: 12px; line-height: 1.2; }
+  .ai-prompt-shortcut .quiet-button { width: auto; min-height: 28px; padding: 4px; font-size: 11px; }
+  .ai-config-dialog .dialog-actions { margin-top: 7px; }
+  .ai-config-dialog .dialog-actions .quiet-button, .ai-config-dialog .dialog-actions .primary-button { min-height: 36px; padding: 7px 10px; }
+  .prompt-editor-dialog textarea { min-height: 88px; max-height: 88px; }
+}
