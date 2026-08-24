@@ -14,6 +14,9 @@ assert.match(index, /<button id="import-button" class="quick-tool-button" type="
 assert.match(index, /<input id="import-input" type="file" accept="application\/json,\.json" hidden \/>/);
 assert.doesNotMatch(index, /<label class="top-text-action import-label" for="import-input">导入<\/label>/);
 assert.match(index, /<button id="delete-entry-detail" type="button" class="quiet-button danger-button">删除这条记录<\/button>/);
+assert.match(index, /id="sync-password" type="password"[^>]*[\s\S]*id="toggle-sync-password"[^>]*aria-controls="sync-password"[^>]*aria-pressed="false"[^>]*>显示<\/button>/);
+assert.match(styles, /\.password-input-wrap\s*\{[^}]*position:\s*relative/s);
+assert.match(styles, /\.password-visibility-toggle\s*\{[^}]*min-height:\s*40px/s);
 assert.match(styles, /--font-sans:/);
 assert.match(styles, /--font-serif:/);
 assert.match(styles, /--font-mono:/);

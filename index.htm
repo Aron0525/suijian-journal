@@ -100,14 +100,19 @@
                 <span>AI 整理建议</span>
                 <button id="dismiss-ai-suggestion" class="text-button">放弃建议</button>
               </div>
-              <div class="ai-compare-grid">
-                <article><span>原文</span><p id="editor-ai-original" class="ai-content"></p></article>
-                <article><span>建议稿</span><p id="editor-ai-content" class="ai-content"></p></article>
+              <div class="ai-suggestion-versions">
+                <article class="ai-suggestion-version">
+                  <div class="ai-suggestion-version-head"><span>带标记的版本</span><small>划线为删除，高亮为新增</small></div>
+                  <p id="editor-ai-diff" class="ai-diff-content"></p>
+                </article>
+                <article class="ai-suggestion-version">
+                  <div class="ai-suggestion-version-head"><span>纯文字版本</span><small>最终建议稿</small></div>
+                  <p id="editor-ai-content" class="ai-content"></p>
+                </article>
               </div>
-              <div id="ai-suggestion-paragraphs" class="ai-suggestion-paragraphs" aria-live="polite"></div>
               <div class="ai-consent-row">
-                <span>可逐段采用；原文本仍在输入框中，确认后才会整篇替换。</span>
-                <button id="apply-ai-suggestion" class="primary-button">采用完整建议</button>
+                <span>输入框仍保留原文；确认后才会采用整篇建议稿。</span>
+                <button id="apply-ai-suggestion" class="primary-button">采用建议稿</button>
               </div>
             </section>
             <div class="editor-footer">
@@ -230,8 +235,9 @@
             <p class="eyebrow">自动保存</p>
             <h1 id="draft-library-title">草稿箱</h1>
           </div>
+          <button id="clear-draft-library" type="button" class="quiet-button danger-button" disabled>清空草稿箱</button>
         </div>
-        <p class="dialog-copy">输入内容会自动保存在这里。点击一条草稿，会粘贴到当前日记输入框，并删除这条草稿。</p>
+        <p class="dialog-copy">点击“粘贴到日记”会恢复并移除草稿；也可直接移除单条草稿，或一键清空草稿箱。</p>
         <div id="draft-library-list" class="draft-library-list" aria-live="polite"></div>
       </div>
     </dialog>
@@ -441,7 +447,12 @@
           <p id="sync-auth-copy" class="sync-auth-copy">注册后会立即登录并开始同步。</p>
           <form id="sync-auth-form" class="sync-auth-form">
             <label>邮箱<input id="sync-email" type="email" required autocomplete="email" placeholder="name@example.com" /></label>
-            <label>密码<input id="sync-password" type="password" required minlength="8" autocomplete="current-password" placeholder="至少 8 位" /></label>
+            <label>密码
+              <span class="password-input-wrap">
+                <input id="sync-password" type="password" required minlength="8" autocomplete="current-password" placeholder="至少 8 位" />
+                <button id="toggle-sync-password" class="password-visibility-toggle" type="button" aria-controls="sync-password" aria-pressed="false" aria-label="显示密码">显示</button>
+              </span>
+            </label>
             <div class="sync-auth-actions">
               <button id="sync-sign-in" type="button" class="primary-button">登录</button>
               <button id="sync-sign-up" type="button" class="quiet-button">注册新账号</button>
@@ -585,6 +596,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260822-account-ai-sync" defer></script>
+    <script src="./app.js?release=20260824-ai-suggestion-diff" defer></script>
   </body>
 </html>

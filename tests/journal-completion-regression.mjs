@@ -15,7 +15,7 @@ for (const id of ['entry-mood', 'entry-tags', 'entry-detail-dialog', 'entry-deta
   assert.match(index, new RegExp(`id="${id}"`), `${id} should be available in the product UI`);
 }
 
-for (const name of ['normalizeTags', 'normalizeMood', 'renderOptionalEntryTitle', 'archiveEntryLabel', 'openEntryDetail', 'saveEntryDetail', 'searchEntries', 'appendHighlightedText', 'reviewRange', 'reviewTasks', 'renderReviewHeatmap', 'extractJournalTasks', 'restoreAutomaticBackup', 'exportMarkdown', 'exportZipBackup', 'promoteEntryAttachmentsToCloud', 'uploadAttachmentToCloud', 'applyAiSuggestionParagraph', 'snoozeReminder', 'skipReminderToday']) {
+for (const name of ['normalizeTags', 'normalizeMood', 'renderOptionalEntryTitle', 'archiveEntryLabel', 'openEntryDetail', 'saveEntryDetail', 'searchEntries', 'appendHighlightedText', 'reviewRange', 'reviewTasks', 'renderReviewHeatmap', 'extractJournalTasks', 'restoreAutomaticBackup', 'exportMarkdown', 'exportZipBackup', 'promoteEntryAttachmentsToCloud', 'uploadAttachmentToCloud', 'buildMarkedDiffSegments', 'renderAiMarkedDiff', 'removeDraftFromLibrary', 'clearDraftLibrary', 'snoozeReminder', 'skipReminderToday']) {
   assert.match(app, new RegExp(`function ${name}\\(`), `${name} should implement its visible behavior`);
 }
 
@@ -23,7 +23,7 @@ assert.match(app, /tags: normalizeTags\(draft\.tags\)/);
 assert.match(app, /mood: normalizeMood\(draft\.mood\)/);
 assert.match(app, /storagePath/);
 assert.match(app, /journal-attachments/);
-assert.match(app, /dataset\.suijianAiParagraph/);
+assert.doesNotMatch(app, /dataset\.suijianAiParagraph/);
 assert.match(app, /className = 'calendar-archive-entry-tag'/);
 assert.match(app, /function archiveEntryLabel\(entry\)/);
 assert.match(app, /tag\.addEventListener\('click', \(\) => openEntryDetail\(entry\.id\)\)/);
@@ -46,6 +46,8 @@ assert.match(styles, /\.entry-metadata/);
 assert.match(styles, /\.search-filters/);
 assert.match(styles, /\.review-heatmap/);
 assert.match(styles, /\.backup-snapshot/);
-assert.match(styles, /\.ai-compare-grid/);
+assert.match(styles, /\.ai-suggestion-versions/);
+assert.match(styles, /\.ai-diff-removed/);
+assert.match(styles, /\.ai-diff-added/);
 
 console.log('Journal completion regression checks passed');

@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "scripts": {
     "check": "node --check app.js && node --check sw.js && node --check scripts/build-mobile-web.mjs && node --check scripts/build-native-update-manifest.mjs && python3 -c \"import ast, pathlib; ast.parse(pathlib.Path('server.py').read_text()); print('syntax checks passed')\"",
-    "test": "node tests/security-regression.mjs && node tests/model-config-regression.mjs && node tests/ai-config-cloud-sync-regression.mjs && node tests/journal-completion-regression.mjs && node tests/data-integrity-regression.mjs && node tests/account-data-isolation-regression.mjs && node tests/daily-cloud-backup-regression.mjs && node tests/ui-accessibility-regression.mjs && node tests/release-guard-regression.mjs && node tests/mobile-ota-package.mjs && node tests/native-app-update-package.mjs && node tests/writing-rhythm-regression.mjs && python3 -m unittest tests/test_server.py",
+    "test": "node tests/security-regression.mjs && node tests/model-config-regression.mjs && node tests/ai-config-cloud-sync-regression.mjs && node tests/journal-completion-regression.mjs && node tests/ai-suggestion-diff-regression.mjs && node tests/data-integrity-regression.mjs && node tests/account-data-isolation-regression.mjs && node tests/daily-cloud-backup-regression.mjs && node tests/ui-accessibility-regression.mjs && node tests/release-guard-regression.mjs && node tests/mobile-ota-package.mjs && node tests/native-app-update-package.mjs && node tests/writing-rhythm-regression.mjs && python3 -m unittest tests/test_server.py",
     "build:mobile": "node scripts/build-mobile-web.mjs",
     "build:android": "./build-android-apk.sh",
     "sync:mobile": "npm run build:mobile && npx cap sync",

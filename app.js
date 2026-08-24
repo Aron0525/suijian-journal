@@ -195,6 +195,7 @@ const elements = {
   draftLibraryCount: document.querySelector('#draft-library-count'),
   draftLibraryDialog: document.querySelector('#draft-library-dialog'),
   closeDraftLibraryDialog: document.querySelector('#close-draft-library-dialog'),
+  clearDraftLibrary: document.querySelector('#clear-draft-library'),
   draftLibraryList: document.querySelector('#draft-library-list'),
   addAttachment: document.querySelector('#add-attachment'),
   attachmentInput: document.querySelector('#attachment-input'),
@@ -204,8 +205,7 @@ const elements = {
   editOrganizePrompt: document.querySelector('#edit-organize-prompt'),
   editorAiResult: document.querySelector('#editor-ai-result'),
   editorAiContent: document.querySelector('#editor-ai-content'),
-  editorAiOriginal: document.querySelector('#editor-ai-original'),
-  aiSuggestionParagraphs: document.querySelector('#ai-suggestion-paragraphs'),
+  editorAiDiff: document.querySelector('#editor-ai-diff'),
   applyAiSuggestion: document.querySelector('#apply-ai-suggestion'),
   dismissAiSuggestion: document.querySelector('#dismiss-ai-suggestion'),
   saveEntry: document.querySelector('#save-entry'),
@@ -303,6 +303,7 @@ const elements = {
   syncAuthForm: document.querySelector('#sync-auth-form'),
   syncEmail: document.querySelector('#sync-email'),
   syncPassword: document.querySelector('#sync-password'),
+  toggleSyncPassword: document.querySelector('#toggle-sync-password'),
   syncSignIn: document.querySelector('#sync-sign-in'),
   syncSignUp: document.querySelector('#sync-sign-up'),
   syncSignedIn: document.querySelector('#sync-signed-in'),
@@ -1450,9 +1451,21 @@ function saveDraftObject(draft, message = '草稿已保存') {
   updateDraftLibraryButton();
 }
 
+function resetEditorDraftInputs() {
+  state.pastedDraft = null;
+  elements.entryTitle.value = '';
+  elements.entryMood.value = '';
+  elements.entryTags.value = '';
+  elements.entryContent.value = '';
+  renderDraftAttachments([]);
+  renderEditorAiSuggestion({});
+  updateWordCount();
+}
+
 function renderDraftLibrary() {
   const drafts = savedDrafts();
   elements.draftLibraryList.replaceChildren();
+  elements.clearDraftLibrary.disabled = !drafts.length;
   if (!drafts.length) {
     const empty = document.createElement('p');
     empty.className = 'draft-library-empty';
@@ -1461,26 +1474,65 @@ function renderDraftLibrary() {
     return;
   }
   drafts.forEach(({ storageKey, date, draft }) => {
-    const item = document.createElement('button');
-    item.type = 'button';
+    const item = document.createElement('article');
     item.className = 'draft-library-item';
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'draft-library-open';
+    open.setAttribute('aria-label', `粘贴 ${draft.title || '未命名草稿'} 到日记输入框并移除草稿`);
     const meta = document.createElement('span');
     meta.className = 'draft-library-meta';
     const dateValue = parseDateKey(date);
-    meta.textContent = `${dateFormatter.format(dateValue)} · 点击粘贴并移除`;
+    meta.textContent = `${dateFormatter.format(dateValue)} · 粘贴后自动移除`;
     const title = document.createElement('strong');
     title.textContent = draft.title || '未命名草稿';
     const preview = document.createElement('span');
     preview.className = 'draft-library-preview';
     const attachmentCount = normalizeAttachments(draft.attachments).length;
     preview.textContent = draft.content.trim() || (attachmentCount ? `含 ${attachmentCount} 个附件` : '只有标题');
-    const action = document.createElement('span');
-    action.className = 'draft-library-action';
-    action.textContent = '粘贴到日记';
-    item.append(meta, title, preview, action);
-    item.addEventListener('click', () => pasteDraftIntoEditor(storageKey));
+    open.append(meta, title, preview);
+    open.addEventListener('click', () => pasteDraftIntoEditor(storageKey));
+    const actions = document.createElement('div');
+    actions.className = 'draft-library-actions';
+    const paste = document.createElement('span');
+    paste.className = 'draft-library-action';
+    paste.textContent = '粘贴到日记';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'quiet-button danger-button draft-library-remove';
+    remove.textContent = '移除';
+    remove.setAttribute('aria-label', `移除草稿：${draft.title || '未命名草稿'}`);
+    remove.addEventListener('click', () => removeDraftFromLibrary(storageKey));
+    actions.append(paste, remove);
+    item.append(open, actions);
     elements.draftLibraryList.append(item);
   });
+}
+
+function removeDraftFromLibrary(storageKey) {
+  const exists = savedDrafts().some((item) => item.storageKey === storageKey);
+  if (!exists) return;
+  clearTimeout(draftTimer);
+  localStorage.removeItem(storageKey);
+  if (storageKey === draftKey()) resetEditorDraftInputs();
+  updateDraftLibraryButton();
+  renderDraftLibrary();
+  elements.draftStatus.textContent = '草稿已移除';
+  showToast('草稿已移除');
+}
+
+function clearDraftLibrary() {
+  const drafts = savedDrafts();
+  if (!drafts.length) return;
+  if (!window.confirm(`确认移除草稿箱中的 ${drafts.length} 条草稿吗？此操作不会删除已保存的日记。`)) return;
+  clearTimeout(draftTimer);
+  const currentStorageKey = draftKey();
+  drafts.forEach(({ storageKey }) => localStorage.removeItem(storageKey));
+  if (drafts.some(({ storageKey }) => storageKey === currentStorageKey)) resetEditorDraftInputs();
+  updateDraftLibraryButton();
+  renderDraftLibrary();
+  elements.draftStatus.textContent = '草稿箱已清空';
+  showToast('草稿箱已清空');
 }
 
 function openDraftLibrary() {
@@ -1932,28 +1984,95 @@ function renderToday() {
   updateDraftLibraryButton();
 }
 
+function tokenizeDiffText(value) {
+  const text = String(value || '');
+  if (!text) return [];
+  try {
+    return text.match(/\s+|[\p{Script=Han}]|[\p{L}\p{N}_]+|[^\s]/gu) || [];
+  } catch {
+    return Array.from(text);
+  }
+}
+
+function appendDiffSegment(segments, type, text) {
+  if (!text) return;
+  const previous = segments.at(-1);
+  if (previous?.type === type) previous.text += text;
+  else segments.push({ type, text });
+}
+
+function buildMarkedDiffSegments(original, suggestion) {
+  const before = tokenizeDiffText(original);
+  const after = tokenizeDiffText(suggestion);
+  const segments = [];
+  let prefix = 0;
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix]) prefix += 1;
+  let beforeEnd = before.length;
+  let afterEnd = after.length;
+  while (beforeEnd > prefix && afterEnd > prefix && before[beforeEnd - 1] === after[afterEnd - 1]) {
+    beforeEnd -= 1;
+    afterEnd -= 1;
+  }
+  appendDiffSegment(segments, 'equal', before.slice(0, prefix).join(''));
+  const beforeMiddle = before.slice(prefix, beforeEnd);
+  const afterMiddle = after.slice(prefix, afterEnd);
+  const cellCount = (beforeMiddle.length + 1) * (afterMiddle.length + 1);
+  if (cellCount <= 300_000) {
+    const width = afterMiddle.length + 1;
+    const table = new Uint16Array(cellCount);
+    for (let row = beforeMiddle.length - 1; row >= 0; row -= 1) {
+      for (let column = afterMiddle.length - 1; column >= 0; column -= 1) {
+        const index = row * width + column;
+        table[index] = beforeMiddle[row] === afterMiddle[column]
+          ? table[(row + 1) * width + column + 1] + 1
+          : Math.max(table[(row + 1) * width + column], table[row * width + column + 1]);
+      }
+    }
+    let row = 0;
+    let column = 0;
+    while (row < beforeMiddle.length || column < afterMiddle.length) {
+      if (row < beforeMiddle.length && column < afterMiddle.length && beforeMiddle[row] === afterMiddle[column]) {
+        appendDiffSegment(segments, 'equal', beforeMiddle[row]);
+        row += 1;
+        column += 1;
+      } else if (column >= afterMiddle.length || (row < beforeMiddle.length && table[(row + 1) * width + column] >= table[row * width + column + 1])) {
+        appendDiffSegment(segments, 'removed', beforeMiddle[row]);
+        row += 1;
+      } else {
+        appendDiffSegment(segments, 'added', afterMiddle[column]);
+        column += 1;
+      }
+    }
+  } else {
+    appendDiffSegment(segments, 'removed', beforeMiddle.join(''));
+    appendDiffSegment(segments, 'added', afterMiddle.join(''));
+  }
+  appendDiffSegment(segments, 'equal', before.slice(beforeEnd).join(''));
+  return segments;
+}
+
+function renderAiMarkedDiff(original, suggestion) {
+  elements.editorAiDiff.replaceChildren();
+  buildMarkedDiffSegments(original, suggestion).forEach((part) => {
+    if (part.type === 'equal') {
+      elements.editorAiDiff.append(document.createTextNode(part.text));
+      return;
+    }
+    const mark = document.createElement('span');
+    mark.className = part.type === 'removed' ? 'ai-diff-removed' : 'ai-diff-added';
+    mark.textContent = part.text;
+    elements.editorAiDiff.append(mark);
+  });
+}
+
 function renderEditorAiSuggestion(draft) {
   const hasSuggestion = Boolean(draft.aiSuggestion && draft.aiOriginal === draft.content);
   elements.editorAiResult.hidden = !hasSuggestion;
-  elements.aiSuggestionParagraphs.replaceChildren();
   if (!hasSuggestion) return;
-  elements.editorAiOriginal.textContent = draft.aiOriginal;
+  renderAiMarkedDiff(draft.aiOriginal, draft.aiSuggestion);
   elements.editorAiContent.textContent = draft.aiSuggestion;
-  draft.aiSuggestion.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean).forEach((paragraph, index) => {
-    const item = document.createElement('div');
-    item.className = 'ai-suggestion-paragraph';
-    const copy = document.createElement('p');
-    copy.textContent = paragraph;
-    const use = document.createElement('button');
-    use.type = 'button';
-    use.className = 'quiet-button';
-    use.dataset.suijianAiParagraph = String(index);
-    use.textContent = `采用第 ${index + 1} 段`;
-    use.addEventListener('click', () => applyAiSuggestionParagraph(index));
-    item.append(copy, use);
-    elements.aiSuggestionParagraphs.append(item);
-  });
 }
+
 function renderEntries() {
   const entries = entriesForDate(state.activeDate);
   elements.entryList.replaceChildren();
@@ -2795,23 +2914,6 @@ async function organizeDraftWithAI() {
   }
 }
 
-function applyAiSuggestionParagraph(index) {
-  const draft = editorDraft();
-  if (!draft.aiSuggestion || draft.aiOriginal !== elements.entryContent.value) {
-    showToast('原文已改变，请重新整理后再采用');
-    return;
-  }
-  const suggested = draft.aiSuggestion.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
-  const original = elements.entryContent.value.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
-  if (!suggested[index]) return;
-  if (original[index]) original[index] = suggested[index];
-  else original.push(suggested[index]);
-  const content = original.join('\n\n');
-  elements.entryContent.value = content;
-  saveDraftObject({ ...draft, content, aiSuggestion: '', aiOriginal: '', originalContent: draft.originalContent || draft.aiOriginal }, `已采用第 ${index + 1} 段建议`);
-  renderEditorAiSuggestion({});
-  showToast(`已采用第 ${index + 1} 段建议`);
-}
 function applyAiSuggestion() {
   const draft = editorDraft();
   if (!draft.aiSuggestion || draft.aiOriginal !== elements.entryContent.value) {
@@ -3433,7 +3535,20 @@ function openCloudSyncDialog() {
   openWorkspaceDialog(elements.syncDialog, target);
 }
 
+function setPasswordVisibility(input, button, visible) {
+  if (!input || !button) return;
+  input.type = visible ? 'text' : 'password';
+  button.textContent = visible ? '隐藏' : '显示';
+  button.setAttribute('aria-pressed', String(visible));
+  button.setAttribute('aria-label', visible ? '隐藏密码' : '显示密码');
+}
+
+function resetSyncPasswordVisibility() {
+  setPasswordVisibility(elements.syncPassword, elements.toggleSyncPassword, false);
+}
+
 function openCloudAccountDialog() {
+  resetSyncPasswordVisibility();
   renderCloudDialogs();
   void checkNativeInstallerUpdate({ quiet: true });
   const target = state.cloud.session ? elements.syncSignOut : elements.syncEmail;
@@ -4488,6 +4603,9 @@ function bindEvents() {
   closeDialogOnBackdrop(elements.accountDialog, closeCloudAccountDialog);
   closeDialogOnBackdrop(elements.syncDialog, closeCloudSyncDialog);
   elements.syncAuthForm.addEventListener('submit', (event) => event.preventDefault());
+  elements.toggleSyncPassword?.addEventListener('click', () => {
+    setPasswordVisibility(elements.syncPassword, elements.toggleSyncPassword, elements.syncPassword.type === 'password');
+  });
   elements.syncSignIn.addEventListener('click', signInCloud);
   elements.syncSignUp.addEventListener('click', signUpCloud);
   elements.syncOpenAccount.addEventListener('click', () => {
@@ -4527,6 +4645,7 @@ function bindEvents() {
   elements.deleteEntryDetail?.addEventListener('click', deleteEntryDetail);
   elements.draftLibraryButton.addEventListener('click', openDraftLibrary);
   elements.closeDraftLibraryDialog.addEventListener('click', closeDraftLibrary);
+  elements.clearDraftLibrary.addEventListener('click', clearDraftLibrary);
   closeDialogOnBackdrop(elements.periodSummaryDialog, closePeriodSummaryDialog);
   closeDialogOnBackdrop(elements.searchDialog, closeSearchDialog);
   closeDialogOnBackdrop(elements.entryDetailDialog, closeEntryDetail);
@@ -4664,5 +4783,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260822-account-ai-sync'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260824-ai-suggestion-diff'));
 }
