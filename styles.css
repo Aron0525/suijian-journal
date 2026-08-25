@@ -477,6 +477,28 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 .entry-tag-chip { border: 1px solid rgba(198,109,76,.35); color: var(--clay-deep); background: rgba(198,109,76,.07); }
 .mood-焦虑, .mood-低落, .mood-疲惫, .mood-烦躁 { border-color: rgba(198,109,76,.5); color: var(--clay-deep); background: rgba(198,109,76,.1); }
 .archive-entry-meta { margin: 8px 0 0; }
+.optional-entry-details, .entry-detail-optional { display: grid; gap: 14px; margin-top: 20px; padding-top: 18px; border-top: 1px dashed rgba(66,99,93,.24); }
+.optional-entry-section { min-width: 0; }
+.optional-entry-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink-soft); font-size: 11px; }
+.optional-entry-heading > span:first-child { color: var(--ink); font-weight: 700; }
+.optional-entry-heading > span:not(:first-child), .optional-entry-control > span { color: var(--ink-soft); font-size: 10px; }
+.optional-entry-heading > div { display: flex; align-items: center; gap: 10px; }
+.optional-entry-heading .quiet-button { padding: 4px 0; color: var(--clay-deep); font-size: 11px; }
+.optional-entry-control, .tag-editor-add-row { display: flex; align-items: center; gap: 9px; margin-top: 8px; }
+.optional-entry-control input, .tag-editor-add-row input, .entry-detail-optional input { flex: 1 1 auto; min-width: 0; min-height: 34px; padding: 6px 9px; border: 1px solid rgba(66,99,93,.28); border-radius: 3px; color: var(--ink); background: rgba(255,255,255,.54); font: inherit; font-size: 12px; }
+.optional-entry-control > span { flex: 0 1 auto; line-height: 1.5; }
+.tag-editor-add { flex: 0 0 auto; min-height: 34px; padding: 6px 9px; border: 1px solid rgba(66,99,93,.34); border-radius: 999px; color: var(--ink); font-size: 11px; white-space: nowrap; }
+.tag-editor-list { display: flex; flex-wrap: wrap; gap: 7px; min-height: 24px; margin-top: 9px; }
+.tag-editor-empty { align-self: center; color: var(--ink-soft); font-size: 10px; }
+.tag-editor-chip { display: inline-flex; align-items: center; gap: 3px; min-height: 26px; padding: 3px 4px 3px 8px; border: 1px solid rgba(198,109,76,.35); border-radius: 999px; color: var(--clay-deep); background: rgba(198,109,76,.07); font-size: 11px; }
+.tag-editor-chip-remove { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; color: var(--clay-deep); background: transparent; font-size: 15px; line-height: 1; }
+.tag-editor-chip-remove:hover { color: #fff; background: var(--clay-deep); }
+.work-content-section > textarea { min-height: 106px; margin-top: 8px; padding: 9px 10px; border: 1px solid rgba(66,99,93,.28); border-radius: 3px; background: rgba(255,255,255,.46); font-size: 13px; line-height: 1.7; }
+.work-ai-result { margin-top: 11px; padding: 13px; border: 1px solid rgba(154,172,113,.5); background: rgba(154,172,113,.1); }
+.work-ai-result .ai-content { margin: 10px 0 0; }
+.entry-work-content { margin: 12px 0 0; padding: 9px 11px; border-left: 2px solid rgba(154,172,113,.8); color: var(--ink-soft); background: rgba(154,172,113,.08); font-size: 12px; line-height: 1.75; white-space: pre-wrap; }
+.entry-detail-optional { margin-top: 16px; }
+.entry-detail-optional .work-content-section > textarea { min-height: 116px; }
 
 .ai-suggestion-versions { display: grid; gap: 10px; margin-top: 14px; }
 .ai-suggestion-version { min-width: 0; padding: 13px; border: 1px solid rgba(154,172,113,.5); background: rgba(255,252,246,.74); }
@@ -528,6 +550,10 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .editor-metadata { align-items: stretch; }
   .editor-metadata label { flex: 1 1 42%; }
   .editor-metadata input { width: 100%; }
+  .optional-entry-control { align-items: stretch; flex-direction: column; }
+  .optional-entry-control > span { width: 100%; }
+  .optional-entry-heading { align-items: flex-start; }
+  .optional-entry-heading > div { flex-wrap: wrap; justify-content: flex-end; }
 
   .search-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-controls { width: 100%; }

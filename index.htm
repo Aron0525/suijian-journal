@@ -80,17 +80,7 @@
             </div>
             <label class="sr-only" for="entry-title">记录标题</label>
             <input id="entry-title" class="entry-title" maxlength="80" placeholder="给这段记录取个名字（选填）" />
-            <div class="entry-metadata editor-metadata" role="group" aria-label="为这条日记添加心情和标签">
-              <label>心情
-                <select id="entry-mood">
-                  <option value="">未标记</option><option value="舒展">舒展</option><option value="平静">平静</option><option value="充实">充实</option><option value="开心">开心</option><option value="焦虑">焦虑</option><option value="低落">低落</option><option value="疲惫">疲惫</option><option value="烦躁">烦躁</option>
-                </select>
-              </label>
-              <label class="entry-tags-field">标签
-                <input id="entry-tags" type="text" maxlength="120" placeholder="例如：工作，阅读，运动" list="journal-tag-options" />
-              </label>
-              <span class="entry-metadata-help">用逗号分隔，最多 8 个标签</span>
-            </div>
+            <datalist id="journal-mood-options"><option value="舒展"></option><option value="平静"></option><option value="充实"></option><option value="开心"></option><option value="焦虑"></option><option value="低落"></option><option value="疲惫"></option><option value="烦躁"></option></datalist>
             <datalist id="journal-tag-options"></datalist>
             <label class="sr-only" for="entry-content">日记内容</label>
             <textarea id="entry-content" rows="9" maxlength="10000" placeholder="不用组织语言，先把想到的写下来。"></textarea>
@@ -113,6 +103,32 @@
               <div class="ai-consent-row">
                 <span>输入框仍保留原文；确认后才会采用整篇建议稿。</span>
                 <button id="apply-ai-suggestion" class="primary-button">采用建议稿</button>
+              </div>
+            </section>
+            <section class="optional-entry-details" aria-label="可选记录信息">
+              <div class="optional-entry-section">
+                <div class="optional-entry-heading"><span>心情（可选）</span><button id="clear-entry-mood" class="quiet-button" type="button">清除</button></div>
+                <div class="optional-entry-control">
+                  <input id="entry-mood" type="text" maxlength="18" placeholder="选择或填写心情" list="journal-mood-options" aria-label="心情（可选）" />
+                  <span>可不填，也可自行添加</span>
+                </div>
+              </div>
+              <div class="optional-entry-section">
+                <div class="optional-entry-heading"><span>标签（可选）</span><span>最多 8 个</span></div>
+                <div class="tag-editor-add-row">
+                  <input id="entry-tags" type="text" maxlength="18" placeholder="输入标签后添加" list="journal-tag-options" aria-label="添加标签" />
+                  <button id="add-entry-tag" class="quiet-button tag-editor-add" type="button">添加标签</button>
+                </div>
+                <div id="entry-tag-list" class="tag-editor-list" aria-live="polite"></div>
+              </div>
+              <div class="optional-entry-section work-content-section">
+                <div class="optional-entry-heading"><span>当天工作内容（可选）</span><div><button id="organize-work-content" class="quiet-button" type="button">AI 整理</button><button id="clear-work-content" class="quiet-button" type="button">清空</button></div></div>
+                <textarea id="entry-work-content" rows="4" maxlength="3000" placeholder="例如：完成了什么工作、推进了哪些事项；不填写也不会影响日记保存。" aria-label="当天工作内容（可选）"></textarea>
+                <section id="work-ai-result" class="work-ai-result" hidden aria-live="polite">
+                  <div class="ai-suggestion-head"><span>工作内容建议稿</span><button id="dismiss-work-ai-suggestion" class="text-button" type="button">放弃建议</button></div>
+                  <p id="work-ai-content" class="ai-content"></p>
+                  <div class="ai-consent-row"><span>原工作内容仍保留，确认后才会替换。</span><button id="apply-work-ai-suggestion" class="primary-button" type="button">采用建议稿</button></div>
+                </section>
               </div>
             </section>
             <div class="editor-footer">
@@ -213,11 +229,22 @@
         </div>
         <p id="entry-detail-date" class="entry-detail-date"></p>
         <label>标题（可不填）<input id="entry-detail-title" type="text" maxlength="80" placeholder="给这条记录起个标题" /></label>
-        <div class="entry-detail-fields">
-          <label>心情<select id="entry-detail-mood"><option value="">暂不选择</option><option value="舒展">舒展</option><option value="平静">平静</option><option value="充实">充实</option><option value="开心">开心</option><option value="焦虑">焦虑</option><option value="低落">低落</option><option value="疲惫">疲惫</option><option value="烦躁">烦躁</option></select></label>
-          <label>标签<input id="entry-detail-tags" type="text" maxlength="120" placeholder="例如：工作，阅读" list="journal-tag-options" /></label>
-        </div>
         <label>日记内容<textarea id="entry-detail-content" rows="11" maxlength="10000" required></textarea></label>
+        <section class="entry-detail-optional" aria-label="可选记录信息">
+          <div class="optional-entry-section">
+            <div class="optional-entry-heading"><span>心情（可选）</span><button id="clear-entry-detail-mood" class="quiet-button" type="button">清除</button></div>
+            <input id="entry-detail-mood" type="text" maxlength="18" placeholder="选择或填写心情" list="journal-mood-options" aria-label="心情（可选）" />
+          </div>
+          <div class="optional-entry-section">
+            <div class="optional-entry-heading"><span>标签（可选）</span><span>最多 8 个</span></div>
+            <div class="tag-editor-add-row"><input id="entry-detail-tags" type="text" maxlength="18" placeholder="输入标签后添加" list="journal-tag-options" aria-label="添加标签" /><button id="add-entry-detail-tag" class="quiet-button tag-editor-add" type="button">添加标签</button></div>
+            <div id="entry-detail-tag-list" class="tag-editor-list" aria-live="polite"></div>
+          </div>
+          <div class="optional-entry-section work-content-section">
+            <div class="optional-entry-heading"><span>当天工作内容（可选）</span><button id="clear-entry-detail-work-content" class="quiet-button" type="button">清空</button></div>
+            <textarea id="entry-detail-work-content" rows="5" maxlength="3000" placeholder="不填写也不会影响日记保存。" aria-label="当天工作内容（可选）"></textarea>
+          </div>
+        </section>
         <p id="entry-detail-attachment-note" class="entry-detail-attachment-note"></p>
         <div class="dialog-actions">
           <button id="delete-entry-detail" type="button" class="quiet-button danger-button">删除这条记录</button>
@@ -596,6 +623,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260824-ai-suggestion-diff" defer></script>
+    <script src="./app.js?release=20260825-optional-entry-details" defer></script>
   </body>
 </html>

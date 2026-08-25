@@ -68,6 +68,7 @@ const context = vm.createContext({
   normalizeAttachments(value) { return Array.isArray(value) ? value : []; },
   normalizeTags(value) { return Array.isArray(value) ? value : []; },
   normalizeMood(value) { return value || ''; },
+  normalizeWorkContent(value) { return value || ''; },
   normalizeJournalTask(value) { return value; },
   renderSyncStatus() {},
   scheduleAutomaticBackup() {},

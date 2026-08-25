@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v33';
-const RELEASE = '20260824-ai-suggestion-diff';
+const CACHE_NAME = 'suijian-pwa-v34';
+const RELEASE = '20260825-optional-entry-details';
 const ASSETS = [
   './',
   './index.html',

@@ -33,9 +33,11 @@ const CLOUD_DAILY_BACKUP_RETENTION_DAYS = 14;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_TAGS = 8;
 const MAX_ENTRY_TAG_CHARS = 18;
+const MAX_ENTRY_MOOD_CHARS = 18;
 const JOURNAL_MOODS = Object.freeze(['舒展', '平静', '充实', '开心', '焦虑', '低落', '疲惫', '烦躁']);
 const JOURNAL_ATTACHMENT_BUCKET = 'journal-attachments';
 const MAX_ENTRY_CONTENT_CHARS = 10000;
+const MAX_ENTRY_WORK_CONTENT_CHARS = 3000;
 const MAX_SUMMARY_CHARS = 60000;
 const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const MOBILE_OTA_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/app-update.json';
@@ -99,7 +101,7 @@ const AI_PROVIDER_PRESETS = Object.freeze({
 });
 const AI_COMPATIBLE_PLATFORM_KEYS = Object.freeze(['openai-compatible', 'qwen', 'kimi', 'minimax', 'glm', 'azure-openai']);
 
-const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
+const PREVIOUS_DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输入的口语化、杂乱、跳跃、逻辑不完整的内容，整理成自然、清晰、易读的日记。
 
 要求：
 1. 保留原意、情绪和关键事实，优先保持原有表达顺序。
@@ -111,7 +113,7 @@ const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请将我输�
 
 我的原始内容：
 {{输入内容}}`;
-const DEFAULT_SUMMARY_PROMPT = `你是一名日记总结助手。请阅读我提供的一段时间内的多篇日记或记录，提炼其中真正重要的信息，生成一份简洁、清晰的阶段总结。
+const PREVIOUS_DEFAULT_SUMMARY_PROMPT = `你是一名日记总结助手。请阅读我提供的一段时间内的多篇日记或记录，提炼其中真正重要的信息，生成一份简洁、清晰的阶段总结。
 
 要求：
 1. 只基于原始内容总结，不编造未出现的人物、事件、原因或结论。
@@ -131,10 +133,92 @@ const DEFAULT_SUMMARY_PROMPT = `你是一名日记总结助手。请阅读我提
 
 原始记录：
 {{输入内容}}`;
+const PREVIOUS_REFINED_ORGANIZE_PROMPT = `你是一名日记整理助手。请把我的原始记录整理为一篇清晰、自然、适合留存的书面日记。
+
+任务重点：
+把口语化、碎片化、跳跃或指代不清的表达，转成完整、明确、连贯的书面表达；只在原文信息足以支持时补足省略的主语、时间关系或连接词。
+
+要求：
+1. 保留原文中的事实、顺序、情绪和语气，不新增人物、经历、时间、动机、原因或结论。
+2. 合并重复内容，修正错别字、语病和混乱语序；把口头语、半句话改成准确、自然的书面句子。
+3. 以原文的记录顺序为主；只有为消除明显歧义或断裂时才调整顺序。
+4. 不强行补写“感受、反思、总结、计划”或标题；原文没有就不写。
+5. 信息不足、指代不明或前后矛盾时，用【待确认：……】标记，不猜测。
+6. 直接输出整理后的日记正文；不解释修改内容，不写前言或评价。
+
+原始记录：
+{{输入内容}}`;
+const PREVIOUS_REFINED_SUMMARY_PROMPT = `你是一名日记记录整理助手。请根据一段时间内的多篇日记，提炼“我做了什么”和“我想了什么”的事实性阶段记录。
+
+任务重点：
+汇总实际发生的事情、推进的事项和明确写出的想法、关注点、判断、困扰或计划。不是反思报告、心理分析、建议或鼓励；不要从记录推导成长、意义、教训或情绪结论。
+
+要求：
+1. 只基于原始记录中明确出现的信息，合并重复内容，不编造人物、事件、原因或结论。
+2. 重点提炼实际完成、推进、安排或经历的事情，以及明确写出的想法、关注点和计划；没有的类别直接省略。
+3. 按时间或内容自然归类，避免逐篇复述日记。
+4. 不评价、不劝导、不提出改进建议，也不把零散记录强行写成反思。
+5. 信息不足、指代不明或前后矛盾时，用【待确认：……】标记，不猜测。
+6. 不修改、评价或替换原始日记内容，只输出独立的阶段记录。
+
+输出格式：
+阶段记录：
+
+做了什么：
+- 【按时间或主题列出实际做过、推进或安排的事情】
+
+想了什么：
+- 【列出明确写下的想法、关注点、判断、困扰或计划】
+
+原始记录：
+{{输入内容}}`;
+const DEFAULT_ORGANIZE_PROMPT = `你是一名日记整理助手。请把我的原始记录整理为一篇清晰、自然、适合留存的书面日记。
+
+任务重点：
+把口语化、碎片化、跳跃或指代不清的表达，转成完整、明确、连贯的书面表达；只在原文信息足以支持时补足省略的主语、时间关系或连接词。
+
+要求：
+1. 保留原文中的事实、顺序、情绪和语气，不新增人物、经历、时间、动机、原因或结论。
+2. 合并重复内容，修正错别字、语病和混乱语序；把口头语、半句话改成准确、自然的书面句子。
+3. 以原文的记录顺序为主；只有为消除明显歧义或断裂时才调整顺序。
+4. 不强行补写“感受、反思、总结、计划”或标题；原文没有就不写。
+5. 无法确定的信息保持原样，不改写、不补全；不要使用【待确认】或任何推测性标记。
+6. 直接输出整理后的日记正文；不解释修改内容，不写前言或评价。
+
+原始记录：
+{{输入内容}}`;
+const DEFAULT_SUMMARY_PROMPT = `你是一名日记记录整理助手。请根据一段时间内的多篇日记，提炼“我做了什么”和“我想了什么”的事实性阶段记录。
+
+任务重点：
+汇总实际发生的事情、推进的事项和明确写出的想法、关注点、判断、困扰或计划。不是反思报告、心理分析、建议或鼓励；不要从记录推导成长、意义、教训或情绪结论。
+
+要求：
+1. 只基于原始记录中明确出现的信息，合并重复内容，不编造人物、事件、原因或结论。
+2. 重点提炼实际完成、推进、安排或经历的事情，以及明确写出的想法、关注点和计划；没有的类别直接省略。
+3. 按时间或内容自然归类，避免逐篇复述日记。
+4. 不评价、不劝导、不提出改进建议，也不把零散记录强行写成反思。
+5. 无法确定的内容不写入总结，不猜测、不补全；不要使用【待确认】或任何推测性标记。
+6. 不修改、评价或替换原始日记内容，只输出独立的阶段记录。
+
+输出格式：
+阶段记录：
+
+做了什么：
+- 【按时间或主题列出实际做过、推进或安排的事情】
+
+想了什么：
+- 【列出明确写下的想法、关注点、判断、困扰或计划】
+
+原始记录：
+{{输入内容}}`;
 const LEGACY_SUMMARY_PROMPTS = new Set([
+  PREVIOUS_REFINED_SUMMARY_PROMPT,
+  PREVIOUS_DEFAULT_SUMMARY_PROMPT,
   '你是中文日记汇总助手。严格依据给定日记，提炼主要事件、反复出现的主题、情绪变化、已做决定和待跟进事项；涉及日期时尽量标注相关日期。不要改写、删除或推断原日记没有的事实。用清晰的项目符号输出。',
 ]);
 const LEGACY_ORGANIZE_PROMPTS = new Set([
+  PREVIOUS_REFINED_ORGANIZE_PROMPT,
+  PREVIOUS_DEFAULT_ORGANIZE_PROMPT,
   '你是中文日记编辑助手。请在不改变事实、情绪和第一人称语气的前提下，理顺句子和段落结构，修正错别字、标点、病句与明显的语序问题。不要增加新信息或解释。只输出整理后的日记正文。',
   '你是中文日记纠错助手。请在不改变事实、情绪、第一人称和叙事顺序的前提下，只修正错别字、标点、病句和明显的语序问题。不要增加新信息，不要解释修改原因。只输出修正后的日记正文。',
 ]);
@@ -175,20 +259,35 @@ const elements = {
   goToday: document.querySelector('#go-today'),
   entryTitle: document.querySelector('#entry-title'),
   entryMood: document.querySelector('#entry-mood'),
+  clearEntryMood: document.querySelector('#clear-entry-mood'),
   entryTags: document.querySelector('#entry-tags'),
+  addEntryTag: document.querySelector('#add-entry-tag'),
+  entryTagList: document.querySelector('#entry-tag-list'),
   entryDetailDialog: document.querySelector('#entry-detail-dialog'),
   closeEntryDetail: document.querySelector('#close-entry-detail'),
   entryDetailForm: document.querySelector('#entry-detail-form'),
   entryDetailDate: document.querySelector('#entry-detail-date'),
   entryDetailTitle: document.querySelector('#entry-detail-title'),
   entryDetailMood: document.querySelector('#entry-detail-mood'),
+  clearEntryDetailMood: document.querySelector('#clear-entry-detail-mood'),
   entryDetailTags: document.querySelector('#entry-detail-tags'),
+  addEntryDetailTag: document.querySelector('#add-entry-detail-tag'),
+  entryDetailTagList: document.querySelector('#entry-detail-tag-list'),
   entryDetailContent: document.querySelector('#entry-detail-content'),
+  entryDetailWorkContent: document.querySelector('#entry-detail-work-content'),
+  clearEntryDetailWorkContent: document.querySelector('#clear-entry-detail-work-content'),
   entryDetailAttachmentNote: document.querySelector('#entry-detail-attachment-note'),
   cancelEntryDetail: document.querySelector('#cancel-entry-detail'),
   deleteEntryDetail: document.querySelector('#delete-entry-detail'),
   journalTagOptions: document.querySelector('#journal-tag-options'),
   entryContent: document.querySelector('#entry-content'),
+  entryWorkContent: document.querySelector('#entry-work-content'),
+  organizeWorkContent: document.querySelector('#organize-work-content'),
+  clearWorkContent: document.querySelector('#clear-work-content'),
+  workAiResult: document.querySelector('#work-ai-result'),
+  workAiContent: document.querySelector('#work-ai-content'),
+  applyWorkAiSuggestion: document.querySelector('#apply-work-ai-suggestion'),
+  dismissWorkAiSuggestion: document.querySelector('#dismiss-work-ai-suggestion'),
   wordCount: document.querySelector('#word-count'),
   draftStatus: document.querySelector('#draft-status'),
   draftLibraryButton: document.querySelector('#draft-library-button'),
@@ -461,7 +560,7 @@ function normalizeCloudMeta(value) {
 
 function normalizeStoredJournalData(parsed) {
   return {
-    entries: Array.isArray(parsed?.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments), tags: normalizeTags(entry?.tags), mood: normalizeMood(entry?.mood) })) : [],
+    entries: Array.isArray(parsed?.entries) ? parsed.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry?.attachments), tags: normalizeTags(entry?.tags), mood: normalizeMood(entry?.mood), workContent: normalizeWorkContent(entry?.workContent) })) : [],
     summaries: parsed?.summaries && typeof parsed.summaries === 'object' ? parsed.summaries : {},
     periodSummaries: Array.isArray(parsed?.periodSummaries) ? parsed.periodSummaries : [],
     tasks: Array.isArray(parsed?.tasks) ? parsed.tasks.map(normalizeJournalTask).filter(Boolean) : [],
@@ -661,8 +760,11 @@ function normalizeTags(value) {
 }
 
 function normalizeMood(value) {
-  const mood = String(value || '').trim();
-  return JOURNAL_MOODS.includes(mood) ? mood : '';
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, MAX_ENTRY_MOOD_CHARS);
+}
+
+function normalizeWorkContent(value) {
+  return String(value || '').trim().slice(0, MAX_ENTRY_WORK_CONTENT_CHARS);
 }
 
 function entryTagsLabel(tags) {
@@ -716,14 +818,74 @@ function refreshJournalTagOptions() {
   });
 }
 
+function tagEditorValues(target) {
+  if (!target) return [];
+  try {
+    return normalizeTags(JSON.parse(target.dataset.tags || '[]'));
+  } catch {
+    return [];
+  }
+}
+
+function tagEditorChanged(target) {
+  if (target === elements.entryTagList) scheduleDraftSave();
+}
+
+function renderTagEditor(target, tags) {
+  if (!target) return;
+  const values = normalizeTags(tags);
+  target.dataset.tags = JSON.stringify(values);
+  target.replaceChildren();
+  if (!values.length) {
+    const empty = document.createElement('span');
+    empty.className = 'tag-editor-empty';
+    empty.textContent = '还没有标签';
+    target.append(empty);
+    return;
+  }
+  values.forEach((tag) => {
+    const chip = document.createElement('span');
+    chip.className = 'tag-editor-chip';
+    const label = document.createElement('span');
+    label.textContent = `# ${tag}`;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'tag-editor-chip-remove';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `删除标签：${tag}`);
+    remove.addEventListener('click', () => {
+      renderTagEditor(target, values.filter((value) => value !== tag));
+      tagEditorChanged(target);
+    });
+    chip.append(label, remove);
+    target.append(chip);
+  });
+}
+
+function addTagFromInput(input, target) {
+  if (!input || !target) return false;
+  const raw = input.value.trim();
+  if (!raw) return false;
+  const previous = tagEditorValues(target);
+  const tags = normalizeTags([...previous, ...raw.split(/[，,、\n]/)]);
+  input.value = '';
+  renderTagEditor(target, tags);
+  tagEditorChanged(target);
+  return tags.length > previous.length;
+}
+
+function editorTags() {
+  return tagEditorValues(elements.entryTagList);
+}
+
 function attachmentPayload(value) {
-  if (Array.isArray(value)) return { files: value, tags: [], mood: '' };
-  if (!value || typeof value !== 'object') return { files: [], tags: [], mood: '' };
-  return { files: Array.isArray(value.files) ? value.files : [], tags: normalizeTags(value.tags), mood: normalizeMood(value.mood) };
+  if (Array.isArray(value)) return { files: value, tags: [], mood: '', workContent: '' };
+  if (!value || typeof value !== 'object') return { files: [], tags: [], mood: '', workContent: '' };
+  return { files: Array.isArray(value.files) ? value.files : [], tags: normalizeTags(value.tags), mood: normalizeMood(value.mood), workContent: normalizeWorkContent(value.workContent) };
 }
 
 function cloudAttachmentPayload(entry) {
-  return { files: normalizeAttachments(entry.attachments), tags: normalizeTags(entry.tags), mood: normalizeMood(entry.mood) };
+  return { files: normalizeAttachments(entry.attachments), tags: normalizeTags(entry.tags), mood: normalizeMood(entry.mood), workContent: normalizeWorkContent(entry.workContent) };
 }
 
 function draftKey() {
@@ -732,7 +894,7 @@ function draftKey() {
 }
 
 function emptyDraft() {
-  return { title: '', content: '', tags: [], mood: '', aiSuggestion: '', aiOriginal: '', originalContent: '', attachments: [], updatedAt: '' };
+  return { title: '', content: '', tags: [], mood: '', workContent: '', aiSuggestion: '', aiOriginal: '', workAiSuggestion: '', workAiOriginal: '', originalContent: '', attachments: [], updatedAt: '' };
 }
 
 function normalizeDraft(value) {
@@ -744,8 +906,11 @@ function normalizeDraft(value) {
     tags: normalizeTags(draft.tags),
     mood: normalizeMood(draft.mood),
     content: typeof draft.content === 'string' ? draft.content.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
+    workContent: normalizeWorkContent(draft.workContent),
     aiSuggestion: typeof draft.aiSuggestion === 'string' ? draft.aiSuggestion.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
     aiOriginal: typeof draft.aiOriginal === 'string' ? draft.aiOriginal.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
+    workAiSuggestion: typeof draft.workAiSuggestion === 'string' ? draft.workAiSuggestion.slice(0, MAX_ENTRY_WORK_CONTENT_CHARS) : '',
+    workAiOriginal: typeof draft.workAiOriginal === 'string' ? draft.workAiOriginal.slice(0, MAX_ENTRY_WORK_CONTENT_CHARS) : '',
     originalContent: typeof draft.originalContent === 'string' ? draft.originalContent.slice(0, MAX_ENTRY_CONTENT_CHARS) : '',
     attachments: normalizeAttachments(draft.attachments),
     updatedAt: typeof draft.updatedAt === 'string' ? draft.updatedAt : '',
@@ -771,7 +936,7 @@ function editorDraft() {
 }
 
 function draftHasContent(draft) {
-  return Boolean(draft.title.trim() || draft.content.trim() || normalizeAttachments(draft.attachments).length);
+  return Boolean(draft.title.trim() || draft.content.trim() || normalizeWorkContent(draft.workContent) || normalizeAttachments(draft.attachments).length);
 }
 
 function savedDrafts() {
@@ -1456,9 +1621,12 @@ function resetEditorDraftInputs() {
   elements.entryTitle.value = '';
   elements.entryMood.value = '';
   elements.entryTags.value = '';
+  renderTagEditor(elements.entryTagList, []);
   elements.entryContent.value = '';
+  elements.entryWorkContent.value = '';
   renderDraftAttachments([]);
   renderEditorAiSuggestion({});
+  renderWorkAiSuggestion({});
   updateWordCount();
 }
 
@@ -1537,7 +1705,7 @@ function clearDraftLibrary() {
 
 function openDraftLibrary() {
   clearTimeout(draftTimer);
-  const current = { ...editorDraft(), title: elements.entryTitle.value, mood: elements.entryMood.value, tags: normalizeTags(elements.entryTags.value), content: elements.entryContent.value };
+  const current = { ...editorDraft(), title: elements.entryTitle.value, mood: elements.entryMood.value, tags: editorTags(), content: elements.entryContent.value, workContent: elements.entryWorkContent.value };
   if (draftHasContent(current)) saveDraft();
   renderDraftLibrary();
   openWorkspaceDialog(elements.draftLibraryDialog, elements.draftLibraryList.querySelector('.draft-library-item'));
@@ -1555,10 +1723,13 @@ function pasteDraftIntoEditor(storageKey) {
   state.pastedDraft = saved.draft;
   elements.entryTitle.value = saved.draft.title;
   elements.entryMood.value = normalizeMood(saved.draft.mood);
-  elements.entryTags.value = entryTagsLabel(saved.draft.tags);
+  elements.entryTags.value = '';
+  renderTagEditor(elements.entryTagList, saved.draft.tags);
   elements.entryContent.value = saved.draft.content;
+  elements.entryWorkContent.value = normalizeWorkContent(saved.draft.workContent);
   renderDraftAttachments(saved.draft.attachments);
   renderEditorAiSuggestion(saved.draft);
+  renderWorkAiSuggestion(saved.draft);
   updateWordCount();
   updateDraftLibraryButton();
   closeDraftLibrary();
@@ -1568,23 +1739,30 @@ function pasteDraftIntoEditor(storageKey) {
 }
 
 function saveDraft() {
+  addTagFromInput(elements.entryTags, elements.entryTagList);
   const previous = editorDraft();
   const content = elements.entryContent.value;
+  const workContent = elements.entryWorkContent.value;
   const title = elements.entryTitle.value;
   const mood = normalizeMood(elements.entryMood.value);
-  const tags = normalizeTags(elements.entryTags.value);
+  const tags = editorTags();
   const isSuggestionStale = previous.aiSuggestion && previous.aiOriginal !== content;
+  const isWorkSuggestionStale = previous.workAiSuggestion && previous.workAiOriginal !== workContent;
   const draft = {
     ...previous,
     title,
     tags,
     mood,
     content,
+    workContent,
     aiSuggestion: isSuggestionStale ? '' : previous.aiSuggestion,
     aiOriginal: isSuggestionStale ? '' : previous.aiOriginal,
+    workAiSuggestion: isWorkSuggestionStale ? '' : previous.workAiSuggestion,
+    workAiOriginal: isWorkSuggestionStale ? '' : previous.workAiOriginal,
   };
   saveDraftObject(draft);
   renderEditorAiSuggestion(draft);
+  renderWorkAiSuggestion(draft);
 }
 
 function attachmentFileName(value) {
@@ -1976,9 +2154,12 @@ function renderToday() {
   const draft = loadDraft();
   elements.entryTitle.value = draft.title;
   elements.entryMood.value = normalizeMood(draft.mood);
-  elements.entryTags.value = entryTagsLabel(draft.tags);
+  elements.entryTags.value = '';
+  renderTagEditor(elements.entryTagList, draft.tags);
   elements.entryContent.value = draft.content;
+  elements.entryWorkContent.value = normalizeWorkContent(draft.workContent);
   renderEditorAiSuggestion(draft);
+  renderWorkAiSuggestion(draft);
   renderDraftAttachments(draft.attachments);
   updateWordCount();
   updateDraftLibraryButton();
@@ -2073,6 +2254,12 @@ function renderEditorAiSuggestion(draft) {
   elements.editorAiContent.textContent = draft.aiSuggestion;
 }
 
+function renderWorkAiSuggestion(draft) {
+  const hasSuggestion = Boolean(draft.workAiSuggestion && draft.workAiOriginal === normalizeWorkContent(draft.workContent));
+  elements.workAiResult.hidden = !hasSuggestion;
+  if (hasSuggestion) elements.workAiContent.textContent = draft.workAiSuggestion;
+}
+
 function renderEntries() {
   const entries = entriesForDate(state.activeDate);
   elements.entryList.replaceChildren();
@@ -2090,6 +2277,13 @@ function renderEntries() {
     renderOptionalEntryTitle(fragment.querySelector('.entry-card-title'), entry);
     renderEntryMetadata(fragment.querySelector('.entry-card-meta'), entry);
     fragment.querySelector('.entry-content').textContent = entry.content;
+    const workContent = normalizeWorkContent(entry.workContent);
+    if (workContent) {
+      const work = document.createElement('p');
+      work.className = 'entry-work-content';
+      work.textContent = `当天工作：${workContent}`;
+      fragment.querySelector('.entry-content').after(work);
+    }
     const attachmentList = renderEntryAttachments(entry.attachments);
     if (attachmentList) fragment.querySelector('.entry-content').after(attachmentList);
     const originalVersion = fragment.querySelector('.original-version');
@@ -2293,7 +2487,7 @@ function searchEntries() {
     .filter((entry) => !requireAttachment || normalizeAttachments(entry.attachments).length > 0)
     .filter((entry) => {
       if (!query) return true;
-      const haystack = `${entry.title} ${entry.content} ${entry.originalContent ?? ''} ${entryTagsLabel(entry.tags)} ${entry.mood || ''} ${normalizeAttachments(entry.attachments).map((attachment) => attachment.name).join(' ')}`.toLocaleLowerCase();
+      const haystack = `${entry.title} ${entry.content} ${entry.originalContent ?? ''} ${normalizeWorkContent(entry.workContent)} ${entryTagsLabel(entry.tags)} ${entry.mood || ''} ${normalizeAttachments(entry.attachments).map((attachment) => attachment.name).join(' ')}`.toLocaleLowerCase();
       return haystack.includes(query);
     })
     .sort((a, b) => b.date.localeCompare(a.date) || new Date(b.createdAt) - new Date(a.createdAt));
@@ -2384,6 +2578,7 @@ function escapeHtml(value) {
 
 function saveNewEntry() {
   clearTimeout(draftTimer);
+  addTagFromInput(elements.entryTags, elements.entryTagList);
   const title = elements.entryTitle.value.trim();
   const content = elements.entryContent.value.trim();
   if (!content) {
@@ -2397,9 +2592,10 @@ function saveNewEntry() {
     id: crypto.randomUUID(),
     date: state.activeDate,
     title,
-    tags: normalizeTags(draft.tags),
-    mood: normalizeMood(draft.mood),
+    tags: editorTags(),
+    mood: normalizeMood(elements.entryMood.value),
     content,
+    workContent: normalizeWorkContent(elements.entryWorkContent.value),
     originalContent: draft.originalContent || '',
     attachments: normalizeAttachments(draft.attachments),
     createdAt: now,
@@ -2417,7 +2613,9 @@ function saveNewEntry() {
   elements.entryTitle.value = '';
   elements.entryMood.value = '';
   elements.entryTags.value = '';
+  renderTagEditor(elements.entryTagList, []);
   elements.entryContent.value = '';
+  elements.entryWorkContent.value = '';
   render();
   void applyReminderSchedule(state.reminder.settings).catch(() => undefined);
   showToast('记录已保存');
@@ -2720,8 +2918,10 @@ function openEntryDetail(entryId) {
   elements.entryDetailDate.textContent = `${dateFormatter.format(date)} · ${timeFormatter.format(new Date(entry.createdAt))}`;
   elements.entryDetailTitle.value = entry.title || '';
   elements.entryDetailMood.value = normalizeMood(entry.mood);
-  elements.entryDetailTags.value = normalizeTags(entry.tags).join('，');
+  elements.entryDetailTags.value = '';
+  renderTagEditor(elements.entryDetailTagList, entry.tags);
   elements.entryDetailContent.value = entry.content || '';
+  elements.entryDetailWorkContent.value = normalizeWorkContent(entry.workContent);
   const attachmentCount = normalizeAttachments(entry.attachments).length;
   elements.entryDetailAttachmentNote.textContent = attachmentCount
     ? `这条日记附有 ${attachmentCount} 个图片或附件，保存文字修改时会继续保留。`
@@ -2764,13 +2964,16 @@ function saveEntryDetail() {
   }
   const now = new Date().toISOString();
   const title = elements.entryDetailTitle.value.trim().slice(0, MAX_ENTRY_TITLE_CHARS);
-  const tags = normalizeTags(elements.entryDetailTags.value);
+  addTagFromInput(elements.entryDetailTags, elements.entryDetailTagList);
+  const tags = tagEditorValues(elements.entryDetailTagList);
   const mood = normalizeMood(elements.entryDetailMood.value);
+  const workContent = normalizeWorkContent(elements.entryDetailWorkContent.value);
   if (!persistDataChange(() => {
     entry.title = title;
     entry.tags = tags;
     entry.mood = mood;
     entry.content = content.slice(0, MAX_ENTRY_CONTENT_CHARS);
+    entry.workContent = workContent;
     entry.updatedAt = now;
     markCloudDirty('entries', entry.id);
     invalidateDailySummary(entry.date, now);
@@ -2902,7 +3105,7 @@ async function organizeDraftWithAI() {
   try {
     const suggestion = await requestAI(buildOrganizeRequest(getAiConfig(), content));
     const previous = editorDraft();
-    const draft = { ...previous, title: elements.entryTitle.value, tags: normalizeTags(elements.entryTags.value), mood: normalizeMood(elements.entryMood.value), content, aiOriginal: content, aiSuggestion: suggestion };
+    const draft = { ...previous, title: elements.entryTitle.value, tags: editorTags(), mood: normalizeMood(elements.entryMood.value), content, workContent: elements.entryWorkContent.value, aiOriginal: content, aiSuggestion: suggestion };
     saveDraftObject(draft, 'AI 建议已生成，等待确认');
     renderEditorAiSuggestion(draft);
     showToast('AI 建议已生成，原文仍未改变');
@@ -2942,6 +3145,73 @@ function dismissAiSuggestion() {
   renderEditorAiSuggestion(updatedDraft);
 }
 
+async function organizeWorkContentWithAI() {
+  const workContent = normalizeWorkContent(elements.entryWorkContent.value);
+  if (!workContent) {
+    showToast('先写一点当天工作内容再交给 AI 整理');
+    elements.entryWorkContent.focus();
+    return;
+  }
+  if (!ensureAiConfigured()) return;
+  setBusy(elements.organizeWorkContent, true, 'AI 正在整理…');
+  try {
+    const suggestion = await requestAI(buildOrganizeRequest(getAiConfig(), workContent));
+    const previous = editorDraft();
+    const draft = {
+      ...previous,
+      title: elements.entryTitle.value,
+      tags: editorTags(),
+      mood: normalizeMood(elements.entryMood.value),
+      content: elements.entryContent.value,
+      workContent,
+      workAiOriginal: workContent,
+      workAiSuggestion: suggestion,
+    };
+    saveDraftObject(draft, '工作内容建议稿已生成，等待确认');
+    renderWorkAiSuggestion(draft);
+    showToast('工作内容建议稿已生成，原文仍未改变');
+  } catch (error) {
+    showToast(`模型请求失败：${error.message}`);
+  } finally {
+    setBusy(elements.organizeWorkContent, false);
+  }
+}
+
+function applyWorkAiSuggestion() {
+  const draft = editorDraft();
+  if (!draft.workAiSuggestion || draft.workAiOriginal !== normalizeWorkContent(elements.entryWorkContent.value)) {
+    showToast('建议已过期，请重新整理');
+    return;
+  }
+  if (!window.confirm('确认采用 AI 建议并替换当天工作内容？')) return;
+  elements.entryWorkContent.value = draft.workAiSuggestion;
+  const updatedDraft = {
+    ...draft,
+    workContent: draft.workAiSuggestion,
+    workAiSuggestion: '',
+    workAiOriginal: '',
+  };
+  saveDraftObject(updatedDraft, '已采用工作内容建议稿');
+  renderWorkAiSuggestion(updatedDraft);
+  showToast('当天工作内容已替换');
+}
+
+function dismissWorkAiSuggestion() {
+  const draft = editorDraft();
+  const updatedDraft = { ...draft, workAiSuggestion: '', workAiOriginal: '' };
+  saveDraftObject(updatedDraft, '已保留原工作内容并放弃建议');
+  renderWorkAiSuggestion(updatedDraft);
+}
+
+function clearWorkContent(input = elements.entryWorkContent, detail = false) {
+  if (!input?.value) return;
+  input.value = '';
+  if (detail) return;
+  const draft = editorDraft();
+  renderWorkAiSuggestion({ ...draft, workContent: '', workAiSuggestion: '', workAiOriginal: '' });
+  scheduleDraftSave();
+}
+
 async function summarizeDay() {
   const entries = entriesForDate(state.activeDate);
   if (!entries.length) {
@@ -2969,7 +3239,10 @@ async function summarizeDay() {
 }
 
 function formatEntriesForAI(entries) {
-  return entries.map((entry) => `【${entry.date} ${entry.title || '未命名记录'}】\n${entry.content}`).join('\n\n');
+  return entries.map((entry) => {
+    const workContent = normalizeWorkContent(entry.workContent);
+    return `【${entry.date} ${entry.title || '未命名记录'}】\n${entry.content}${workContent ? `\n当天工作内容：${workContent}` : ''}`;
+  }).join('\n\n');
 }
 
 async function summarizePeriod() {
@@ -3032,6 +3305,7 @@ function journalMarkdown() {
     if (normalizeTags(entry.tags).length) metadata.push(`标签：${normalizeTags(entry.tags).map((tag) => `#${tag}`).join(' ')}`);
     if (metadata.length) lines.push(metadata.join(' · '), '');
     lines.push(entry.content || '', '');
+    if (normalizeWorkContent(entry.workContent)) lines.push(`当天工作内容：\n${normalizeWorkContent(entry.workContent)}`, '');
     const attachments = normalizeAttachments(entry.attachments);
     if (attachments.length) lines.push(`附件：${attachments.map((item) => item.name).join('、')}`, '');
   });
@@ -3151,7 +3425,7 @@ async function restoreAutomaticBackup(id) {
   await saveAutomaticBackup();
   const next = snapshot.data;
   state.data = {
-    entries: Array.isArray(next.entries) ? next.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry.attachments), tags: normalizeTags(entry.tags), mood: normalizeMood(entry.mood) })) : [],
+    entries: Array.isArray(next.entries) ? next.entries.map((entry) => ({ ...entry, attachments: normalizeAttachments(entry.attachments), tags: normalizeTags(entry.tags), mood: normalizeMood(entry.mood), workContent: normalizeWorkContent(entry.workContent) })) : [],
     summaries: next.summaries && typeof next.summaries === 'object' ? next.summaries : {},
     periodSummaries: Array.isArray(next.periodSummaries) ? next.periodSummaries : [],
     tasks: Array.isArray(next.tasks) ? next.tasks.map(normalizeJournalTask).filter(Boolean) : [],
@@ -3221,12 +3495,14 @@ function normalizeImportedEntry(entry) {
   if (!entry || !isUuid(entry.id) || !isDateKey(entry.date) || !validText(entry.content, MAX_ENTRY_CONTENT_CHARS)) return null;
   if (entry.title !== undefined && !validText(entry.title, MAX_ENTRY_TITLE_CHARS)) return null;
   if (entry.originalContent !== undefined && !validText(entry.originalContent, MAX_ENTRY_CONTENT_CHARS)) return null;
+  if (entry.workContent !== undefined && !validText(entry.workContent, MAX_ENTRY_WORK_CONTENT_CHARS)) return null;
   return {
     id: entry.id,
     date: entry.date,
     title: entry.title || '',
     content: entry.content,
     originalContent: entry.originalContent || '',
+    workContent: normalizeWorkContent(entry.workContent),
     attachments: normalizeAttachments(entry.attachments),
     tags: normalizeTags(entry.tags),
     mood: normalizeMood(entry.mood),
@@ -3866,7 +4142,7 @@ function shouldPreserveDirtyEntry(local, remote, dirtyEntryIds) {
 function remoteEntryToLocal(entry, localEntry = null) {
   const preserveLocalAttachmentMetadata = state.cloud.attachmentsSupported === false && localEntry;
   const payload = preserveLocalAttachmentMetadata
-    ? { files: normalizeAttachments(localEntry.attachments), tags: normalizeTags(localEntry.tags), mood: normalizeMood(localEntry.mood) }
+    ? { files: normalizeAttachments(localEntry.attachments), tags: normalizeTags(localEntry.tags), mood: normalizeMood(localEntry.mood), workContent: normalizeWorkContent(localEntry.workContent) }
     : attachmentPayload(entry.attachments);
   return {
     id: entry.id,
@@ -3877,6 +4153,7 @@ function remoteEntryToLocal(entry, localEntry = null) {
     attachments: normalizeAttachments(payload.files),
     tags: normalizeTags(payload.tags),
     mood: normalizeMood(payload.mood),
+    workContent: normalizeWorkContent(payload.workContent),
     createdAt: entry.created_at,
     updatedAt: entry.updated_at,
     deletedAt: entry.deleted_at || undefined,
@@ -4642,6 +4919,15 @@ function bindEvents() {
     event.preventDefault();
     saveEntryDetail();
   });
+  elements.clearEntryDetailMood.addEventListener('click', () => { elements.entryDetailMood.value = ''; });
+  elements.entryDetailTags.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addTagFromInput(elements.entryDetailTags, elements.entryDetailTagList);
+  });
+  elements.entryDetailTags.addEventListener('change', () => addTagFromInput(elements.entryDetailTags, elements.entryDetailTagList));
+  elements.addEntryDetailTag.addEventListener('click', () => addTagFromInput(elements.entryDetailTags, elements.entryDetailTagList));
+  elements.clearEntryDetailWorkContent.addEventListener('click', () => clearWorkContent(elements.entryDetailWorkContent, true));
   elements.deleteEntryDetail?.addEventListener('click', deleteEntryDetail);
   elements.draftLibraryButton.addEventListener('click', openDraftLibrary);
   elements.closeDraftLibraryDialog.addEventListener('click', closeDraftLibrary);
@@ -4657,9 +4943,23 @@ function bindEvents() {
     render();
   });
   elements.entryTitle.addEventListener('input', scheduleDraftSave);
-  elements.entryMood.addEventListener('change', scheduleDraftSave);
+  elements.entryMood.addEventListener('input', scheduleDraftSave);
+  elements.clearEntryMood.addEventListener('click', () => {
+    elements.entryMood.value = '';
+    scheduleDraftSave();
+  });
   elements.entryTags.addEventListener('input', scheduleDraftSave);
+  elements.entryTags.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (addTagFromInput(elements.entryTags, elements.entryTagList)) showToast('标签已添加');
+  });
+  elements.entryTags.addEventListener('change', () => addTagFromInput(elements.entryTags, elements.entryTagList));
+  elements.addEntryTag.addEventListener('click', () => {
+    if (addTagFromInput(elements.entryTags, elements.entryTagList)) showToast('标签已添加');
+  });
   elements.entryContent.addEventListener('input', scheduleDraftSave);
+  elements.entryWorkContent.addEventListener('input', scheduleDraftSave);
   elements.addAttachment.addEventListener('click', () => elements.attachmentInput.click());
   elements.attachmentInput.addEventListener('change', async (event) => {
     await attachFiles(event.target.files);
@@ -4668,16 +4968,25 @@ function bindEvents() {
   elements.clearDraft.addEventListener('click', () => {
     clearTimeout(draftTimer);
     elements.entryTitle.value = '';
+    elements.entryMood.value = '';
+    elements.entryTags.value = '';
+    renderTagEditor(elements.entryTagList, []);
     elements.entryContent.value = '';
+    elements.entryWorkContent.value = '';
     state.pastedDraft = null;
     localStorage.removeItem(draftKey());
     updateDraftLibraryButton();
     updateWordCount();
     renderDraftAttachments([]);
     renderEditorAiSuggestion({});
+    renderWorkAiSuggestion({});
     elements.draftStatus.textContent = '草稿已清空';
   });
   elements.organizeDraft.addEventListener('click', organizeDraftWithAI);
+  elements.organizeWorkContent.addEventListener('click', organizeWorkContentWithAI);
+  elements.applyWorkAiSuggestion.addEventListener('click', applyWorkAiSuggestion);
+  elements.dismissWorkAiSuggestion.addEventListener('click', dismissWorkAiSuggestion);
+  elements.clearWorkContent.addEventListener('click', () => clearWorkContent());
   elements.editOrganizePrompt.addEventListener('click', () => openPromptEditor('organize'));
   elements.applyAiSuggestion.addEventListener('click', applyAiSuggestion);
   elements.dismissAiSuggestion.addEventListener('click', dismissAiSuggestion);
@@ -4783,5 +5092,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260824-ai-suggestion-diff'));
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260825-optional-entry-details'));
 }
