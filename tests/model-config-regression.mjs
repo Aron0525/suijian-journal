@@ -42,16 +42,18 @@ assert.doesNotMatch(index, /id="ai-summary-prompt"/);
 // 默认 AI 整理要把口语和碎片记录转为清晰书面日记；默认汇总只提炼行动与想法，避免反思式输出。
 const defaultOrganizePrompt = app.match(/const DEFAULT_ORGANIZE_PROMPT = `([\s\S]*?)`;/)?.[1] ?? '';
 const defaultSummaryPrompt = app.match(/const DEFAULT_SUMMARY_PROMPT = `([\s\S]*?)`;/)?.[1] ?? '';
-assert.match(defaultOrganizePrompt, /口语化、碎片化、跳跃或指代不清的表达，转成完整、明确、连贯的书面表达/);
-assert.match(defaultOrganizePrompt, /不强行补写“感受、反思、总结、计划”或标题/);
-assert.match(defaultOrganizePrompt, /无法确定的信息保持原样，不改写、不补全/);
+assert.match(defaultOrganizePrompt, /你只负责改善表达，不重写经历/);
+assert.match(defaultOrganizePrompt, /只要不能确定，就保留原有说法/);
+assert.match(defaultOrganizePrompt, /不要添加标题、清单、反思、总结、计划、评价或原文没有的内容/);
+assert.match(defaultOrganizePrompt, /原始：今天开会说产品里导入那里要改/);
 assert.doesNotMatch(defaultOrganizePrompt, /【待确认：……】/);
-assert.match(defaultSummaryPrompt, /提炼“我做了什么”和“我想了什么”的事实性阶段记录/);
-assert.match(defaultSummaryPrompt, /不是反思报告、心理分析、建议或鼓励/);
+assert.match(defaultSummaryPrompt, /只说明“我做了什么”和“我想了什么”/);
+assert.match(defaultSummaryPrompt, /必须区分“已完成、进行中、计划”/);
+assert.match(defaultSummaryPrompt, /【4月2日】下午处理导入功能/);
 assert.match(defaultSummaryPrompt, /做了什么：/);
 assert.match(defaultSummaryPrompt, /想了什么：/);
 assert.doesNotMatch(defaultSummaryPrompt, /关键词：/);
-assert.match(defaultSummaryPrompt, /无法确定的内容不写入总结，不猜测、不补全/);
+assert.match(defaultSummaryPrompt, /指代不明、信息不足或前后矛盾的内容不写入总结/);
 assert.doesNotMatch(defaultSummaryPrompt, /【待确认：……】/);
 
 // 旧的内置默认文本在升级后应自动切换为新默认；用户自己编辑过的提示词仍保留。
@@ -59,8 +61,10 @@ assert.match(app, /const PREVIOUS_DEFAULT_ORGANIZE_PROMPT = `/);
 assert.match(app, /const PREVIOUS_DEFAULT_SUMMARY_PROMPT = `/);
 assert.match(app, /const PREVIOUS_REFINED_ORGANIZE_PROMPT = `/);
 assert.match(app, /const PREVIOUS_REFINED_SUMMARY_PROMPT = `/);
-assert.match(app, /LEGACY_ORGANIZE_PROMPTS = new Set\(\[[\s\S]*PREVIOUS_REFINED_ORGANIZE_PROMPT[\s\S]*PREVIOUS_DEFAULT_ORGANIZE_PROMPT/s);
-assert.match(app, /LEGACY_SUMMARY_PROMPTS = new Set\(\[[\s\S]*PREVIOUS_REFINED_SUMMARY_PROMPT[\s\S]*PREVIOUS_DEFAULT_SUMMARY_PROMPT/s);
+assert.match(app, /const PREVIOUS_CURRENT_ORGANIZE_PROMPT = `/);
+assert.match(app, /const PREVIOUS_CURRENT_SUMMARY_PROMPT = `/);
+assert.match(app, /LEGACY_ORGANIZE_PROMPTS = new Set\(\[[\s\S]*PREVIOUS_CURRENT_ORGANIZE_PROMPT[\s\S]*PREVIOUS_REFINED_ORGANIZE_PROMPT[\s\S]*PREVIOUS_DEFAULT_ORGANIZE_PROMPT/s);
+assert.match(app, /LEGACY_SUMMARY_PROMPTS = new Set\(\[[\s\S]*PREVIOUS_CURRENT_SUMMARY_PROMPT[\s\S]*PREVIOUS_REFINED_SUMMARY_PROMPT[\s\S]*PREVIOUS_DEFAULT_SUMMARY_PROMPT/s);
 
 // Azure OpenAI 使用 api-key header；其余 OpenAI-compatible provider 使用 Bearer header。
 assert.match(edge, /apiStyle === 'azure-openai'/);

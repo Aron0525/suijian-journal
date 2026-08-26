@@ -35,53 +35,54 @@ function extractFunction(source, name) {
 
 assert.equal(index, indexHtm, '两份 PWA 入口必须保持一致');
 for (const id of [
+  'toggle-entry-mood', 'toggle-entry-tags', 'entry-mood-panel', 'entry-tags-panel',
   'entry-mood', 'clear-entry-mood', 'entry-tags', 'add-entry-tag', 'entry-tag-list',
-  'entry-work-content', 'organize-work-content', 'clear-work-content', 'work-ai-result',
-  'entry-detail-mood', 'clear-entry-detail-mood', 'entry-detail-tags', 'add-entry-detail-tag',
-  'entry-detail-tag-list', 'entry-detail-work-content', 'clear-entry-detail-work-content',
+  'toggle-entry-detail-mood', 'toggle-entry-detail-tags', 'entry-detail-mood-panel', 'entry-detail-tags-panel',
+  'entry-detail-mood', 'clear-entry-detail-mood', 'entry-detail-tags', 'add-entry-detail-tag', 'entry-detail-tag-list',
 ]) {
-  assert.match(index, new RegExp(`id="${id}"`), `${id} should be available as an optional-entry control`);
+  assert.match(index, new RegExp(`id="${id}"`), `${id} should be available`);
 }
-assert.match(index, /心情（可选）/);
-assert.match(index, /标签（可选）/);
-assert.match(index, /当天工作内容（可选）/);
+for (const oldId of ['entry-work-content', 'organize-work-content', 'clear-work-content', 'work-ai-result', 'entry-detail-work-content']) {
+  assert.doesNotMatch(index, new RegExp(`id="${oldId}"`), `${oldId} should be removed`);
+}
+assert.match(index, /class="metadata-picker-toggle"/);
+assert.match(index, /data-mood-target="entry"/);
+assert.match(index, /data-mood-target="detail"/);
+assert.match(index, /aria-expanded="false"/);
+assert.doesNotMatch(index, /当天工作内容（可选）/);
 assert.doesNotMatch(index, /<select id="entry-mood"/, 'mood should support a typed custom value as well as presets');
 assert.match(index, /list="journal-mood-options"/);
 
-for (const name of ['normalizeWorkContent', 'renderTagEditor', 'addTagFromInput', 'organizeWorkContentWithAI', 'applyWorkAiSuggestion', 'clearWorkContent']) {
-  assert.match(app, new RegExp(`function ${name}\\(`), `${name} should support optional entry details`);
+for (const name of ['normalizeMood', 'normalizeTags', 'renderTagEditor', 'addTagFromInput', 'metadataPickerControls', 'updateMetadataPicker', 'toggleMetadataPicker', 'chooseMood']) {
+  assert.match(app, new RegExp(`function ${name}\\(`), `${name} should support the compact metadata picker`);
 }
-assert.match(app, /workContent: normalizeWorkContent\(draft\.workContent\)/);
-assert.match(app, /workContent: normalizeWorkContent\(entry\.workContent\)/);
-assert.match(app, /workContent: normalizeWorkContent\(payload\.workContent\)/);
-assert.match(app, /entry\.workContent = workContent/);
-assert.match(app, /当天工作内容：/);
-assert.match(styles, /\.optional-entry-details/);
-assert.match(styles, /\.tag-editor-chip-remove/);
-assert.match(styles, /\.work-ai-result/);
+for (const name of ['organizeWorkContentWithAI', 'applyWorkAiSuggestion', 'dismissWorkAiSuggestion', 'clearWorkContent']) {
+  assert.doesNotMatch(app, new RegExp(`function ${name}\\(`), `${name} should be removed with work content`);
+}
+assert.match(app, /document\.querySelectorAll\('\.mood-choice'\)/);
+assert.match(app, /closeMetadataPickers\('entry'\)/);
+assert.match(styles, /\.metadata-picker-toggle/);
+assert.match(styles, /\.metadata-picker-panel/);
+assert.match(styles, /\.mood-choice-list/);
+assert.doesNotMatch(styles, /\.work-ai-result/);
 
 const defaultOrganizePrompt = app.match(/const DEFAULT_ORGANIZE_PROMPT = `([\s\S]*?)`;/)?.[1] ?? '';
 const defaultSummaryPrompt = app.match(/const DEFAULT_SUMMARY_PROMPT = `([\s\S]*?)`;/)?.[1] ?? '';
-assert.match(defaultOrganizePrompt, /无法确定的信息保持原样，不改写、不补全/);
-assert.match(defaultSummaryPrompt, /无法确定的内容不写入总结，不猜测、不补全/);
+assert.match(defaultOrganizePrompt, /你只负责改善表达，不重写经历/);
+assert.match(defaultOrganizePrompt, /只要不能确定，就保留原有说法/);
+assert.match(defaultSummaryPrompt, /只说明“我做了什么”和“我想了什么”/);
+assert.match(defaultSummaryPrompt, /不写反思、评价、建议、鼓励、心理分析或结尾总结/);
 assert.doesNotMatch(defaultOrganizePrompt, /【待确认：……】/);
 assert.doesNotMatch(defaultSummaryPrompt, /【待确认：……】/);
 
 const normalizeContext = vm.createContext({
   MAX_ENTRY_MOOD_CHARS: 18,
-  MAX_ENTRY_WORK_CONTENT_CHARS: 3000,
   String,
-  normalizeTags(value) { return Array.isArray(value) ? value : []; },
 });
 vm.runInContext([
   extractFunction(app, 'normalizeMood'),
-  extractFunction(app, 'normalizeWorkContent'),
-  extractFunction(app, 'attachmentPayload'),
 ].join('\n\n'), normalizeContext);
 assert.equal(normalizeContext.normalizeMood('  专注  '), '专注', 'a custom mood should be saved instead of discarded');
 assert.equal(normalizeContext.normalizeMood(''), '', 'mood stays optional');
-assert.equal(normalizeContext.normalizeWorkContent('  完成周报  '), '完成周报', 'work content should remain editable plain text');
-assert.equal(normalizeContext.normalizeWorkContent(''), '', 'work content stays optional');
-assert.equal(normalizeContext.attachmentPayload({ workContent: '  完成周报  ' }).workContent, '完成周报', 'work content should travel with the cloud JSON payload');
 
 console.log('Optional entry details regression checks passed');
