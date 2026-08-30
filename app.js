@@ -292,7 +292,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '' },
+  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', passwordRecovery: false },
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -309,6 +309,8 @@ const elements = {
   authGate: document.querySelector('#auth-gate'),
   authGateLogin: document.querySelector('#auth-gate-login'),
   journalWorkspace: document.querySelector('#journal-workspace'),
+  calendarPage: document.querySelector('#calendar-page'),
+  archivePage: document.querySelector('#archive-page'),
   views: document.querySelectorAll('.view'),
   navLinks: document.querySelectorAll('.nav-link'),
   dateLabel: document.querySelector('#date-label'),
@@ -465,7 +467,12 @@ const elements = {
   toggleSyncPassword: document.querySelector('#toggle-sync-password'),
   syncSignIn: document.querySelector('#sync-sign-in'),
   syncSignUp: document.querySelector('#sync-sign-up'),
+  syncResetPassword: document.querySelector('#sync-reset-password'),
   syncSignedIn: document.querySelector('#sync-signed-in'),
+  syncPasswordRecoveryForm: document.querySelector('#sync-password-recovery-form'),
+  syncNewPassword: document.querySelector('#sync-new-password'),
+  syncConfirmPassword: document.querySelector('#sync-confirm-password'),
+  syncUpdatePassword: document.querySelector('#sync-update-password'),
   syncAccountStatus: document.querySelector('#sync-account-status'),
   syncAccountEmail: document.querySelector('#sync-account-email'),
   syncAuthCopy: document.querySelector('#sync-auth-copy'),
@@ -711,6 +718,7 @@ function activateJournalAccount(userId) {
   state.cloud.backupsSupported = null;
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
+  state.cloud.passwordRecovery = false;
   state.pastedDraft = null;
   state.editingEntryId = '';
   return true;
@@ -729,6 +737,7 @@ function clearJournalAccount() {
   state.cloud.backupsSupported = null;
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
+  state.cloud.passwordRecovery = false;
   state.pastedDraft = null;
   state.editingEntryId = '';
 }
@@ -2519,13 +2528,27 @@ function renderCalendarArchive() {
   });
 }
 
+function scrollToHomePage(pageId, behavior = 'smooth') {
+  const page = pageId === 'today-view'
+    ? document.querySelector('#today-view')
+    : pageId === 'calendar-page'
+      ? elements.calendarPage
+      : pageId === 'archive-page'
+        ? elements.archivePage
+        : null;
+  page?.scrollIntoView({ behavior, block: 'start' });
+}
+
 function jumpToArchiveDate(date) {
   if (!isDateKey(date)) return;
   state.archiveJumpDate = date;
   state.visibleMonth = startOfMonth(parseDateKey(date));
   elements.archiveJumpDate.value = date;
   renderCalendar();
-  document.querySelector(`[data-archive-date="${date}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  scrollToHomePage('archive-page');
+  window.requestAnimationFrame(() => {
+    document.querySelector(`[data-archive-date="${date}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
 }
 
 function defaultPeriodStart() {
@@ -2670,7 +2693,10 @@ function renderSearchResults() {
       state.view = 'today';
       closeSearchDialog();
       render();
-      document.querySelector('.archive-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollToHomePage('archive-page');
+      window.requestAnimationFrame(() => {
+        document.querySelector(`[data-archive-date="${entry.date}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
     });
     elements.searchResults.append(result);
   });
@@ -3801,6 +3827,7 @@ function renderCloudAccountDialog() {
   elements.syncAccountStatus.textContent = session ? '已登录' : '未登录';
   elements.syncAuthForm.hidden = Boolean(session);
   elements.syncSignedIn.hidden = !session;
+  elements.syncPasswordRecoveryForm.hidden = !(session && state.cloud.passwordRecovery);
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
     ? '这台设备会持续保持登录；打开手机或电脑时，日记和模型配置都会自动同步。'
@@ -3908,7 +3935,66 @@ function emailRedirectUrl() {
   const url = new URL(window.location.href);
   url.search = '';
   url.hash = '';
+  // Supabase only accepts configured redirect URLs. Local preview URLs are not
+  // a stable destination for email links, so send those flows to the public app.
+  if (url.protocol !== 'https:' || ['127.0.0.1', 'localhost'].includes(url.hostname)) return DESKTOP_APP_URL;
   return url.toString();
+}
+
+async function requestCloudPasswordReset() {
+  if (!ensureCloudConfigured()) return;
+  if (!elements.syncEmail.reportValidity()) return;
+  const email = elements.syncEmail.value.trim();
+  if (!email) return;
+  setBusy(elements.syncResetPassword, true, '正在发送…');
+  try {
+    await cloudAuthRequest('/auth/v1/recover', { email, redirect_to: emailRedirectUrl() });
+    recordCloudActivity('已发送密码重设邮件', 'info');
+    showToast('重设邮件已发送，请在邮箱中打开链接并设置新密码');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    recordCloudActivity(`发送重设邮件失败：${message}`, 'error');
+    showToast(`发送重设邮件失败：${message}`);
+  } finally {
+    setBusy(elements.syncResetPassword, false);
+  }
+}
+
+async function updateCloudPassword() {
+  if (!elements.syncPasswordRecoveryForm.reportValidity()) return;
+  const password = elements.syncNewPassword.value;
+  if (password !== elements.syncConfirmPassword.value) {
+    showToast('两次输入的新密码不一致');
+    return;
+  }
+  setBusy(elements.syncUpdatePassword, true, '正在保存…');
+  try {
+    const config = readCloudConfig();
+    const session = await activeCloudSession();
+    const response = await fetch(cloudUrl('/auth/v1/user'), {
+      method: 'PUT',
+      headers: {
+        apikey: config.publishableKey,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ password }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload?.msg || payload?.message || `同步服务返回 ${response.status}`);
+    state.cloud.passwordRecovery = false;
+    elements.syncNewPassword.value = '';
+    elements.syncConfirmPassword.value = '';
+    recordCloudActivity('密码已重设，可在其他设备登录同步', 'success');
+    showToast('新密码已保存，请使用它在电脑和手机登录同一账号');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    recordCloudActivity(`保存新密码失败：${message}`, 'error');
+    showToast(`保存新密码失败：${message}`);
+  } finally {
+    setBusy(elements.syncUpdatePassword, false);
+    renderCloudDialogs();
+  }
 }
 
 function cloudUrl(path) {
@@ -3978,10 +4064,16 @@ async function restoreCloudSessionFromAuthCallback() {
     if (!session) throw new Error('邮箱验证返回的数据不完整');
     storeCloudSession(session);
     activateJournalAccount(session.user.id);
-    recordCloudActivity('邮箱验证成功，已登录同步账号', 'success');
+    state.cloud.passwordRecovery = params.get('type') === 'recovery';
+    recordCloudActivity(state.cloud.passwordRecovery ? '密码重设验证成功，请设置新密码' : '邮箱验证成功，已登录同步账号', 'success');
     render();
     renderCloudDialogs();
-    await syncCloud();
+    if (state.cloud.passwordRecovery) {
+      openCloudAccountDialog();
+      showToast('请设置新密码，然后在手机和电脑使用同一账号登录');
+    } else {
+      await syncCloud();
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
     recordCloudActivity(`邮箱验证登录失败：${message}`, 'error');
@@ -4924,6 +5016,8 @@ function bindEvents() {
   });
   elements.syncSignIn.addEventListener('click', signInCloud);
   elements.syncSignUp.addEventListener('click', signUpCloud);
+  elements.syncResetPassword.addEventListener('click', requestCloudPasswordReset);
+  elements.syncUpdatePassword.addEventListener('click', updateCloudPassword);
   elements.syncOpenAccount.addEventListener('click', () => {
     closeCloudSyncDialog();
     openCloudAccountDialog();
@@ -5138,5 +5232,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260825-prompt-workflow'));
+window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260830-sync-recovery'));
 }

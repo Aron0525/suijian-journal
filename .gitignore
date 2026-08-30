@@ -17,6 +17,7 @@ __pycache__/
 .env.*
 !.env.example
 supabase/.env*
+supabase/.temp/
 *.jks
 *.keystore
 *.pem

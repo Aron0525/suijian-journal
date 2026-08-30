@@ -46,7 +46,12 @@
       </section>
 
       <div id="journal-workspace" class="journal-workspace">
-      <section id="today-view" class="view active" aria-labelledby="today-title">
+        <nav class="mobile-page-nav" aria-label="主页分区">
+          <a href="#today-view">记录</a>
+          <a href="#calendar-page">日历</a>
+          <a href="#archive-page">档案</a>
+        </nav>
+      <section id="today-view" class="view active home-page home-page-writing" aria-labelledby="today-title">
         <div class="hero-row">
           <div>
             <p id="date-label" class="eyebrow"></p>
@@ -137,7 +142,13 @@
             </div>
           </section>
 
-          <aside class="today-calendar card" aria-labelledby="today-calendar-title">
+        </div>
+        <p class="mobile-scroll-cue" aria-hidden="true">向下滑动查看日历 <span>↓</span></p>
+      </section>
+
+      <section id="calendar-page" class="home-page home-page-calendar" aria-labelledby="today-calendar-title">
+
+        <aside class="today-calendar card" aria-labelledby="today-calendar-title">
             <div class="today-calendar-head">
               <div>
                 <p class="eyebrow">时间坐标</p>
@@ -154,9 +165,11 @@
             </div>
             <div id="calendar-grid" class="calendar-grid" role="group" aria-label="日历"></div>
             <p class="calendar-legend"><span class="legend-mark"></span>点击日期，跳转到对应的日记档案</p>
-          </aside>
-        </div>
+        </aside>
+        <p class="mobile-scroll-cue" aria-hidden="true">向下滑动查看日记档案 <span>↓</span></p>
+      </section>
 
+      <section id="archive-page" class="home-page home-page-archive" aria-labelledby="calendar-title">
         <section class="archive-section" aria-labelledby="calendar-title">
           <section class="calendar-archive card" aria-labelledby="calendar-title">
             <div class="calendar-archive-head">
@@ -481,11 +494,20 @@
             <div class="sync-auth-actions">
               <button id="sync-sign-in" type="button" class="primary-button">登录</button>
               <button id="sync-sign-up" type="button" class="quiet-button">注册新账号</button>
+              <button id="sync-reset-password" type="button" class="quiet-button">重设密码</button>
             </div>
           </form>
           <div id="sync-signed-in" class="sync-signed-in" hidden>
             <p>当前账号：<strong id="sync-account-email"></strong></p>
             <p id="sync-last-session" class="sync-session-copy"></p>
+            <form id="sync-password-recovery-form" class="sync-password-recovery-form" hidden>
+              <p>请为这个账号设置一个新密码。设置完成后，手机和电脑都可使用新密码登录同步。</p>
+              <label>新密码<input id="sync-new-password" type="password" required minlength="8" autocomplete="new-password" placeholder="至少 8 位" /></label>
+              <label>确认新密码<input id="sync-confirm-password" type="password" required minlength="8" autocomplete="new-password" placeholder="再次输入新密码" /></label>
+              <div class="sync-auth-actions">
+                <button id="sync-update-password" type="button" class="primary-button">保存新密码</button>
+              </div>
+            </form>
             <div class="sync-auth-actions">
               <button id="sync-sign-out" type="button" class="quiet-button">退出账号</button>
             </div>
@@ -621,6 +643,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260825-prompt-workflow" defer></script>
+    <script src="./app.js?release=20260830-sync-recovery" defer></script>
   </body>
 </html>

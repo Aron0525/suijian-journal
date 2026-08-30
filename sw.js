@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v35';
-const RELEASE = '20260825-prompt-workflow';
+const CACHE_NAME = 'suijian-pwa-v36';
+const RELEASE = '20260830-sync-recovery';
 const ASSETS = [
   './',
   './index.html',
