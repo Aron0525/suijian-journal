@@ -78,6 +78,7 @@ const context = vm.createContext({
   renderCloudDialogs() {},
 });
 vm.runInContext([
+  extractFunction(app, 'emptyAdminState'),
   extractFunction(app, 'emptyCloudMeta'),
   extractFunction(app, 'normalizeCloudMeta'),
   extractFunction(app, 'emptyJournalData'),

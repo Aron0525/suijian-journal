@@ -509,6 +509,7 @@
               </div>
             </form>
             <div class="sync-auth-actions">
+              <button id="admin-panel-button" type="button" class="quiet-button" hidden>管理员面板</button>
               <button id="sync-sign-out" type="button" class="quiet-button">退出账号</button>
             </div>
           </div>
@@ -575,6 +576,39 @@
           <ol id="sync-activity-list" class="sync-activity-list" aria-live="polite"></ol>
         </section>
         <p class="dialog-note">同步只处理日记、当天摘要和跨日汇总；草稿与模型 API Key 不会上传。</p>
+      </div>
+    </dialog>
+
+    <dialog id="admin-dialog" class="workspace-dialog admin-dialog" aria-labelledby="admin-dialog-title">
+      <div class="workspace-dialog-body">
+        <button id="close-admin-dialog" type="button" class="icon-button workspace-dialog-close" aria-label="关闭管理员面板">×</button>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">受限访问 · 已记录操作</p>
+            <h1 id="admin-dialog-title">管理员面板</h1>
+          </div>
+        </div>
+        <p class="dialog-copy">可查看已注册用户及其保存的日记数据。密码始终不可读取；需要时可向用户发送重设密码邮件。</p>
+        <div class="admin-toolbar" role="group" aria-label="管理员操作">
+          <button id="admin-refresh-users" type="button" class="primary-button">刷新用户</button>
+          <span id="admin-status" class="sync-config-status" aria-live="polite">正在检查权限</span>
+        </div>
+        <div id="admin-user-list" class="admin-user-list" aria-live="polite"></div>
+        <section id="admin-user-detail" class="admin-user-detail" hidden aria-labelledby="admin-user-detail-title">
+          <div class="admin-user-detail-head">
+            <div>
+              <p class="eyebrow">用户数据</p>
+              <h2 id="admin-user-detail-title">未选择用户</h2>
+            </div>
+            <button id="close-admin-user-detail" type="button" class="quiet-button">返回用户列表</button>
+          </div>
+          <div class="admin-user-actions">
+            <button id="admin-send-password-reset" type="button" class="quiet-button">发送重设密码邮件</button>
+            <button id="admin-toggle-user-suspension" type="button" class="quiet-button danger-button">停用账号</button>
+          </div>
+          <p id="admin-user-summary" class="admin-user-summary"></p>
+          <pre id="admin-user-data" class="admin-user-data"></pre>
+        </section>
       </div>
     </dialog>
 

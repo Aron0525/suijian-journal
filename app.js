@@ -10,6 +10,7 @@ const ACCOUNT_CLOUD_ACTIVITY_PREFIX = 'suijian-cloud-activity-v2:';
 const LEGACY_STORAGE_KEY = 'suijian-calendar-journal-v1';
 const DEFAULT_SUPABASE_URL = 'https://ekotpodfgbkcykfcewmc.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_3TEgVHOwGufdfu_DHcvGLg_XD0tXovA';
+const ADMIN_FUNCTION_NAME = 'admin-panel';
 const MAX_PERIOD_INPUT_CHARS = 60000;
 const MAX_IMPORT_BYTES = 12 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 4;
@@ -284,6 +285,22 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute
 
 const initialCloudSession = loadCloudSession();
 
+function emptyAdminState() {
+  return {
+    checkedUserId: '',
+    isAdmin: false,
+    checking: false,
+    loadingUsers: false,
+    page: 1,
+    nextPage: null,
+    users: [],
+    selectedUser: null,
+    selectedData: null,
+    detailLoading: false,
+    error: '',
+  };
+}
+
 const state = {
   data: loadData(initialCloudSession?.user?.id),
   activeDate: localDateKey(),
@@ -293,6 +310,7 @@ const state = {
   promptEditorType: 'organize',
   archiveJumpDate: '',
   cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', passwordRecovery: false },
+  admin: emptyAdminState(),
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
@@ -481,6 +499,19 @@ const elements = {
   clearSyncActivity: document.querySelector('#clear-sync-activity'),
   syncNowButton: document.querySelector('#sync-now-button'),
   syncSignOut: document.querySelector('#sync-sign-out'),
+  adminPanelButton: document.querySelector('#admin-panel-button'),
+  adminDialog: document.querySelector('#admin-dialog'),
+  closeAdminDialog: document.querySelector('#close-admin-dialog'),
+  adminRefreshUsers: document.querySelector('#admin-refresh-users'),
+  adminStatus: document.querySelector('#admin-status'),
+  adminUserList: document.querySelector('#admin-user-list'),
+  adminUserDetail: document.querySelector('#admin-user-detail'),
+  adminUserDetailTitle: document.querySelector('#admin-user-detail-title'),
+  closeAdminUserDetail: document.querySelector('#close-admin-user-detail'),
+  adminSendPasswordReset: document.querySelector('#admin-send-password-reset'),
+  adminToggleUserSuspension: document.querySelector('#admin-toggle-user-suspension'),
+  adminUserSummary: document.querySelector('#admin-user-summary'),
+  adminUserData: document.querySelector('#admin-user-data'),
   periodSummaryDialog: document.querySelector('#period-summary-dialog'),
   closePeriodSummaryDialog: document.querySelector('#close-period-summary-dialog'),
   searchDialog: document.querySelector('#search-dialog'),
@@ -719,6 +750,7 @@ function activateJournalAccount(userId) {
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
   state.cloud.passwordRecovery = false;
+  state.admin = emptyAdminState();
   state.pastedDraft = null;
   state.editingEntryId = '';
   return true;
@@ -738,6 +770,7 @@ function clearJournalAccount() {
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
   state.cloud.passwordRecovery = false;
+  state.admin = emptyAdminState();
   state.pastedDraft = null;
   state.editingEntryId = '';
 }
@@ -3840,6 +3873,266 @@ function renderCloudAccountDialog() {
     : '注册一个账号后，即可把日记同步到其他设备。';
   elements.cloudAccountButton.textContent = session ? '账号' : '登录';
   elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
+  if (elements.adminPanelButton) elements.adminPanelButton.hidden = !(session && state.admin.isAdmin);
+}
+
+function adminDateLabel(value) {
+  if (!value) return '暂无';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '暂无';
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date);
+}
+
+function adminUserDataSummary(data) {
+  if (!data || typeof data !== 'object') return '正在读取用户保存的数据…';
+  const count = (key) => Array.isArray(data[key]) ? data[key].length : 0;
+  return `日记 ${count('entries')} 条 · 当天摘要 ${count('daily_summaries')} 条 · 阶段总结 ${count('period_summaries')} 条 · 待办 ${count('tasks')} 条 · 云端备份 ${count('backups')} 条 · 附件目录 ${count('attachment_folders')} 个`;
+}
+
+function clearAdminUserDetail({ renderPanel = true } = {}) {
+  state.admin.selectedUser = null;
+  state.admin.selectedData = null;
+  state.admin.detailLoading = false;
+  if (renderPanel) renderAdminPanel();
+}
+
+function renderAdminUserList() {
+  if (!elements.adminUserList) return;
+  const list = elements.adminUserList;
+  list.replaceChildren();
+  if (!state.admin.isAdmin) return;
+  if (state.admin.loadingUsers) {
+    const loading = document.createElement('p');
+    loading.className = 'admin-empty-copy';
+    loading.textContent = '正在读取用户列表…';
+    list.append(loading);
+    return;
+  }
+  if (state.admin.error) {
+    const error = document.createElement('p');
+    error.className = 'admin-empty-copy';
+    error.textContent = `读取失败：${state.admin.error}`;
+    list.append(error);
+    return;
+  }
+  if (!state.admin.users.length) {
+    const empty = document.createElement('p');
+    empty.className = 'admin-empty-copy';
+    empty.textContent = '暂无可显示的注册用户。';
+    list.append(empty);
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  for (const user of state.admin.users) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'admin-user-row';
+    row.dataset.userId = user.id;
+    row.setAttribute('aria-label', `查看 ${user.email || '未命名用户'} 的保存数据`);
+    const identity = document.createElement('span');
+    identity.className = 'admin-user-identity';
+    const email = document.createElement('strong');
+    email.textContent = user.email || '未提供邮箱';
+    const meta = document.createElement('small');
+    meta.textContent = `注册：${adminDateLabel(user.created_at)} · 最近登录：${adminDateLabel(user.last_sign_in_at)}`;
+    identity.append(email, meta);
+    const stateLabel = document.createElement('span');
+    stateLabel.className = `admin-user-state${user.banned_until ? ' is-suspended' : ''}`;
+    stateLabel.textContent = user.banned_until ? '已停用' : '正常';
+    row.append(identity, stateLabel);
+    row.addEventListener('click', () => void openAdminUser(user.id));
+    fragment.append(row);
+  }
+  if (state.admin.nextPage) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'quiet-button admin-load-more';
+    more.textContent = '加载更多用户';
+    more.addEventListener('click', () => void loadAdminUsers({ append: true }));
+    fragment.append(more);
+  }
+  list.append(fragment);
+}
+
+function renderAdminPanel() {
+  if (!elements.adminDialog) return;
+  const { admin } = state;
+  if (elements.adminStatus) {
+    elements.adminStatus.textContent = admin.checking
+      ? '正在核验管理员权限'
+      : (admin.loadingUsers ? '正在读取用户列表' : (admin.error ? '读取失败' : (admin.isAdmin ? `已加载 ${admin.users.length} 位用户` : '无管理员权限')));
+  }
+  if (elements.adminRefreshUsers) elements.adminRefreshUsers.disabled = !admin.isAdmin || admin.loadingUsers;
+  renderAdminUserList();
+  const hasDetail = Boolean(admin.selectedUser);
+  if (elements.adminUserDetail) elements.adminUserDetail.hidden = !hasDetail;
+  if (!hasDetail) return;
+  const user = admin.selectedUser;
+  elements.adminUserDetailTitle.textContent = user.email || '未提供邮箱';
+  elements.adminUserSummary.textContent = admin.detailLoading
+    ? '正在读取此用户的日记、汇总、待办、附件目录和备份…'
+    : adminUserDataSummary(admin.selectedData);
+  elements.adminUserData.textContent = admin.detailLoading || !admin.selectedData
+    ? ''
+    : JSON.stringify(admin.selectedData, null, 2);
+  const suspended = Boolean(user.banned_until);
+  elements.adminToggleUserSuspension.textContent = suspended ? '恢复账号' : '停用账号';
+  elements.adminToggleUserSuspension.classList.toggle('danger-button', !suspended);
+  const isCurrentUser = user.id === state.cloud.session?.user?.id;
+  elements.adminSendPasswordReset.disabled = admin.detailLoading || isCurrentUser;
+  elements.adminToggleUserSuspension.disabled = admin.detailLoading || isCurrentUser;
+}
+
+async function adminRequest(action, { method = 'GET', query = {}, body = null, retry = true } = {}) {
+  const config = readCloudConfig();
+  const session = await activeCloudSession();
+  const url = new URL(cloudUrl(`/functions/v1/${ADMIN_FUNCTION_NAME}`));
+  url.searchParams.set('action', action);
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  }
+  const response = await fetch(url, {
+    method,
+    headers: {
+      apikey: config.publishableKey,
+      Authorization: `Bearer ${session.accessToken}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (response.status === 401 && retry) {
+    await refreshCloudSession();
+    return adminRequest(action, { method, query, body, retry: false });
+  }
+  const payload = response.status === 204 ? null : await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload?.error || payload?.message || `管理员服务返回 ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+async function checkAdminAccess() {
+  const userId = state.cloud.session?.user?.id || '';
+  if (!userId || !isCloudConfigured()) {
+    state.admin = emptyAdminState();
+    renderCloudAccountDialog();
+    return false;
+  }
+  if (state.admin.checkedUserId === userId && !state.admin.checking) return state.admin.isAdmin;
+  state.admin = { ...emptyAdminState(), checkedUserId: userId, checking: true };
+  renderCloudAccountDialog();
+  try {
+    const payload = await adminRequest('status');
+    if (state.cloud.session?.user?.id !== userId) return false;
+    state.admin.isAdmin = payload?.is_admin === true;
+  } catch (error) {
+    if (state.cloud.session?.user?.id !== userId) return false;
+    state.admin.isAdmin = false;
+    // Non-administrators receive the same ordinary account experience; detailed
+    // server diagnostics stay out of the public account UI.
+    console.info('Admin panel is unavailable for the current account.', error);
+  } finally {
+    if (state.cloud.session?.user?.id === userId) state.admin.checking = false;
+    renderCloudAccountDialog();
+  }
+  return state.admin.isAdmin;
+}
+
+async function loadAdminUsers({ append = false } = {}) {
+  if (!state.admin.isAdmin || state.admin.loadingUsers) return;
+  const page = append ? state.admin.nextPage : 1;
+  if (!page) return;
+  state.admin.loadingUsers = true;
+  state.admin.error = '';
+  renderAdminPanel();
+  try {
+    const payload = await adminRequest('users', { query: { page } });
+    state.admin.users = append ? [...state.admin.users, ...(payload?.users || [])] : (payload?.users || []);
+    state.admin.page = page;
+    state.admin.nextPage = payload?.next_page || null;
+  } catch (error) {
+    state.admin.error = error instanceof Error ? error.message : '未知错误';
+  } finally {
+    state.admin.loadingUsers = false;
+    renderAdminPanel();
+  }
+}
+
+async function openAdminUser(userId) {
+  const selectedUser = state.admin.users.find((user) => user.id === userId);
+  if (!selectedUser || !state.admin.isAdmin) return;
+  state.admin.selectedUser = selectedUser;
+  state.admin.selectedData = null;
+  state.admin.detailLoading = true;
+  renderAdminPanel();
+  try {
+    const payload = await adminRequest('user', { query: { user_id: userId } });
+    if (state.admin.selectedUser?.id !== userId) return;
+    state.admin.selectedUser = payload?.user || selectedUser;
+    state.admin.selectedData = payload?.data || {};
+  } catch (error) {
+    if (state.admin.selectedUser?.id !== userId) return;
+    state.admin.selectedData = { error: error instanceof Error ? error.message : '未知错误' };
+  } finally {
+    if (state.admin.selectedUser?.id === userId) state.admin.detailLoading = false;
+    renderAdminPanel();
+  }
+}
+
+function closeAdminDialog() {
+  clearAdminUserDetail({ renderPanel: false });
+  state.admin.users = [];
+  state.admin.nextPage = null;
+  closeWorkspaceDialog(elements.adminDialog);
+}
+
+async function openAdminDialog() {
+  const isAdmin = await checkAdminAccess();
+  if (!isAdmin) return;
+  renderAdminPanel();
+  openWorkspaceDialog(elements.adminDialog, elements.adminRefreshUsers);
+  await loadAdminUsers();
+}
+
+async function sendAdminPasswordReset() {
+  const user = state.admin.selectedUser;
+  if (!user || user.id === state.cloud.session?.user?.id) return;
+  if (!window.confirm(`向 ${user.email || '该用户'} 发送重设密码邮件？`)) return;
+  setBusy(elements.adminSendPasswordReset, true, '正在发送…');
+  try {
+    await adminRequest('send_password_reset', { method: 'POST', body: { user_id: user.id } });
+    showToast('重设密码邮件已发送');
+  } catch (error) {
+    showToast(`发送失败：${error instanceof Error ? error.message : '未知错误'}`);
+  } finally {
+    setBusy(elements.adminSendPasswordReset, false);
+    renderAdminPanel();
+  }
+}
+
+async function toggleAdminUserSuspension() {
+  const user = state.admin.selectedUser;
+  if (!user || user.id === state.cloud.session?.user?.id) return;
+  const suspended = Boolean(user.banned_until);
+  const verb = suspended ? '恢复' : '停用';
+  if (!window.confirm(`确定${verb} ${user.email || '该用户'} 的账号？`)) return;
+  setBusy(elements.adminToggleUserSuspension, true, `正在${verb}…`);
+  try {
+    await adminRequest(suspended ? 'restore_user' : 'suspend_user', { method: 'POST', body: { user_id: user.id } });
+    user.banned_until = suspended ? null : new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString();
+    showToast(suspended ? '账号已恢复' : '账号已停用');
+    renderAdminPanel();
+  } catch (error) {
+    showToast(`${verb}失败：${error instanceof Error ? error.message : '未知错误'}`);
+  } finally {
+    setBusy(elements.adminToggleUserSuspension, false);
+    renderAdminPanel();
+  }
 }
 
 function renderCloudSyncDialog() {
@@ -4073,6 +4366,7 @@ async function restoreCloudSessionFromAuthCallback() {
       showToast('请设置新密码，然后在手机和电脑使用同一账号登录');
     } else {
       await syncCloud();
+      await checkAdminAccess();
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
@@ -4685,6 +4979,7 @@ async function signInCloud() {
     elements.syncPassword.value = '';
     recordCloudActivity('登录成功', 'success');
     await syncCloud();
+    await checkAdminAccess();
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
     recordCloudActivity(`登录失败：${message}`, 'error');
@@ -4714,6 +5009,7 @@ async function signUpCloud() {
       elements.syncPassword.value = '';
       recordCloudActivity('注册并登录成功', 'success');
       await syncCloud();
+      await checkAdminAccess();
     } else {
       elements.syncPassword.value = '';
       recordCloudActivity('注册已提交，等待邮箱验证', 'info');
@@ -4759,7 +5055,10 @@ async function initializeCloudSync() {
   render();
   renderCloudDialogs();
   startCloudAutoSync();
-  if (!restoredFromCallback && state.cloud.session && isCloudConfigured()) syncCloud({ quiet: true });
+  if (!restoredFromCallback && state.cloud.session && isCloudConfigured()) {
+    void syncCloud({ quiet: true });
+    void checkAdminAccess();
+  }
 }
 
 function isNativeMobileApp() {
@@ -5004,12 +5303,19 @@ function bindEvents() {
   elements.cloudAccountButton.addEventListener('click', openCloudAccountDialog);
   elements.authGateLogin.addEventListener('click', openCloudAccountDialog);
   elements.closeAccountDialog.addEventListener('click', closeCloudAccountDialog);
+  elements.adminPanelButton?.addEventListener('click', () => void openAdminDialog());
+  elements.closeAdminDialog?.addEventListener('click', closeAdminDialog);
+  elements.adminRefreshUsers?.addEventListener('click', () => void loadAdminUsers());
+  elements.closeAdminUserDetail?.addEventListener('click', () => clearAdminUserDetail());
+  elements.adminSendPasswordReset?.addEventListener('click', () => void sendAdminPasswordReset());
+  elements.adminToggleUserSuspension?.addEventListener('click', () => void toggleAdminUserSuspension());
   elements.copyDesktopAppUrl.addEventListener('click', copyDesktopAppUrl);
   elements.checkMobileUpdate.addEventListener('click', () => void checkMobileUpdatesManually());
   elements.downloadMobileUpdate.addEventListener('click', openNativeInstallerDownload);
   elements.closeSyncDialog.addEventListener('click', closeCloudSyncDialog);
   closeDialogOnBackdrop(elements.accountDialog, closeCloudAccountDialog);
   closeDialogOnBackdrop(elements.syncDialog, closeCloudSyncDialog);
+  closeDialogOnBackdrop(elements.adminDialog, closeAdminDialog);
   elements.syncAuthForm.addEventListener('submit', (event) => event.preventDefault());
   elements.toggleSyncPassword?.addEventListener('click', () => {
     setPasswordVisibility(elements.syncPassword, elements.toggleSyncPassword, elements.syncPassword.type === 'password');

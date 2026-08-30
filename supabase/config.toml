@@ -2,3 +2,6 @@ project_id = "ekotpodfgbkcykfcewmc"
 
 [functions.ai-proxy]
 verify_jwt = true
+
+[functions.admin-panel]
+verify_jwt = true

@@ -255,3 +255,35 @@ drop policy if exists "own journal attachments delete" on storage.objects;
 create policy "own journal attachments delete" on storage.objects
 for delete to authenticated
 using (bucket_id = 'journal-attachments' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Administrator access is deliberately server-side only. Browser clients never
+-- receive the service-role key or a policy that reads another user's diary.
+create table if not exists public.journal_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.admin_audit_events (
+  id uuid primary key default gen_random_uuid(),
+  actor_user_id uuid not null references auth.users(id) on delete restrict,
+  action text not null,
+  target_user_id uuid references auth.users(id) on delete set null,
+  detail jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  check (jsonb_typeof(detail) = 'object')
+);
+
+create index if not exists admin_audit_events_actor_created_idx
+  on public.admin_audit_events (actor_user_id, created_at desc);
+create index if not exists admin_audit_events_target_created_idx
+  on public.admin_audit_events (target_user_id, created_at desc);
+
+alter table public.journal_admins enable row level security;
+alter table public.admin_audit_events enable row level security;
+revoke all on table public.journal_admins, public.admin_audit_events from anon, authenticated;
+
+-- Initial allow-list. If the account has not yet been created, this statement
+-- safely inserts no row; re-run this schema after the account exists.
+insert into public.journal_admins (user_id)
+select id from auth.users where lower(email) = 'rili66@outlook.com'
+on conflict (user_id) do nothing;
