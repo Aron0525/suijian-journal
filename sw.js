@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v38';
-const RELEASE = '20260901-mobile-natural-scroll';
+const CACHE_NAME = 'suijian-pwa-v39';
+const RELEASE = '20260901-public-app-sync';
 const ASSETS = [
   './',
   './index.html',

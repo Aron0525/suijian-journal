@@ -5531,12 +5531,20 @@ function bindEvents() {
   });
 }
 
-bindEvents();
-render();
-void initializeNativeUpdates();
-void initializeWritingReminders();
-initializeCloudSync();
+function redirectFilePreviewToPublishedApp() {
+  if (window.location.protocol !== 'file:') return false;
+  window.location.replace(DESKTOP_APP_URL);
+  return true;
+}
 
-if ('serviceWorker' in navigator) {
-window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260901-mobile-natural-scroll'));
+if (!redirectFilePreviewToPublishedApp()) {
+  bindEvents();
+  render();
+  void initializeNativeUpdates();
+  void initializeWritingReminders();
+  initializeCloudSync();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260901-public-app-sync'));
+  }
 }
