@@ -30,6 +30,7 @@ const AUTO_BACKUP_STORE = 'recovery-snapshots';
 const AUTO_BACKUP_SNAPSHOT_COUNT = 3;
 const AUTO_BACKUP_DELAY_MS = 800;
 const CLOUD_DAILY_BACKUP_PREFIX = 'suijian-cloud-daily-backup-v1:';
+const CLOUD_DRAFT_SYNC_PREFIX = 'suijian-cloud-draft-sync-v1:';
 const CLOUD_DAILY_BACKUP_RETENTION_DAYS = 14;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_TAGS = 8;
@@ -309,7 +310,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', passwordRecovery: false },
+  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, draftsSupported: null, backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', passwordRecovery: false },
   admin: emptyAdminState(),
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
@@ -746,6 +747,7 @@ function activateJournalAccount(userId) {
   state.cloud.lastError = '';
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
+  state.cloud.draftsSupported = null;
   state.cloud.backupsSupported = null;
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
@@ -766,6 +768,7 @@ function clearJournalAccount() {
   state.cloud.lastError = '';
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
+  state.cloud.draftsSupported = null;
   state.cloud.backupsSupported = null;
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
@@ -1062,9 +1065,21 @@ function cloudAttachmentPayload(entry) {
   return { files: normalizeAttachments(entry.attachments), tags: normalizeTags(entry.tags), mood: normalizeMood(entry.mood), workContent: normalizeWorkContent(entry.workContent) };
 }
 
-function draftKey() {
+function draftStorageKeyForDate(date) {
   const prefix = accountDraftPrefix(activeJournalAccountId());
-  return prefix ? `${prefix}${state.activeDate}` : '';
+  return prefix && isDateKey(date) ? `${prefix}${date}` : '';
+}
+
+function draftKey() {
+  return draftStorageKeyForDate(state.activeDate);
+}
+
+function draftDateFromStorageKey(storageKey) {
+  const prefix = accountDraftPrefix(activeJournalAccountId());
+  const date = prefix && String(storageKey || '').startsWith(prefix)
+    ? String(storageKey).slice(prefix.length)
+    : '';
+  return isDateKey(date) ? date : '';
 }
 
 function emptyDraft() {
@@ -1132,6 +1147,147 @@ function savedDrafts() {
     return [];
   }
   return drafts.sort((first, second) => second.updatedAt - first.updatedAt || second.date.localeCompare(first.date));
+}
+
+function cloudDraftSyncStorageKey(userId = activeJournalAccountId()) {
+  const accountId = validJournalAccountId(userId);
+  return accountId ? `${CLOUD_DRAFT_SYNC_PREFIX}${accountId}` : '';
+}
+
+function emptyCloudDraftSyncMeta() {
+  return { initialized: false, dirty: {} };
+}
+
+function readCloudDraftSyncMeta(userId = activeJournalAccountId()) {
+  const storageKey = cloudDraftSyncStorageKey(userId);
+  if (!storageKey) return emptyCloudDraftSyncMeta();
+  try {
+    const parsed = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    const dirty = parsed?.dirty && typeof parsed.dirty === 'object' && !Array.isArray(parsed.dirty)
+      ? Object.entries(parsed.dirty).reduce((result, [date, operation]) => {
+        if (!isDateKey(date) || !operation || typeof operation !== 'object') return result;
+        const updatedAt = typeof operation.updatedAt === 'string' ? operation.updatedAt : '';
+        const deletedAt = typeof operation.deletedAt === 'string' ? operation.deletedAt : '';
+        if (updatedAt) result[date] = { updatedAt, ...(deletedAt ? { deletedAt } : {}) };
+        return result;
+      }, {})
+      : {};
+    return { initialized: Boolean(parsed?.initialized), dirty };
+  } catch {
+    return emptyCloudDraftSyncMeta();
+  }
+}
+
+function writeCloudDraftSyncMeta(meta, userId = activeJournalAccountId()) {
+  const storageKey = cloudDraftSyncStorageKey(userId);
+  if (!storageKey) return false;
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({ initialized: Boolean(meta?.initialized), dirty: meta?.dirty || {} }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function draftUpdatedAt(draft, fallback = new Date().toISOString()) {
+  return typeof draft?.updatedAt === 'string' && Number.isFinite(Date.parse(draft.updatedAt))
+    ? draft.updatedAt
+    : fallback;
+}
+
+function markCloudDraftDirty(date) {
+  if (!isDateKey(date) || !activeJournalAccountId()) return;
+  const storageKey = draftStorageKeyForDate(date);
+  const draft = readDraft(storageKey);
+  if (!draftHasContent(draft)) return;
+  const meta = readCloudDraftSyncMeta();
+  meta.initialized = true;
+  meta.dirty[date] = { updatedAt: draftUpdatedAt(draft) };
+  writeCloudDraftSyncMeta(meta);
+  queueCloudSync();
+}
+
+function markCloudDraftDeleted(date, deletedAt = new Date().toISOString()) {
+  if (!isDateKey(date) || !activeJournalAccountId()) return;
+  const meta = readCloudDraftSyncMeta();
+  meta.initialized = true;
+  meta.dirty[date] = { updatedAt: deletedAt, deletedAt };
+  writeCloudDraftSyncMeta(meta);
+  queueCloudSync();
+}
+
+function hasCloudDraftChanges() {
+  return Object.keys(readCloudDraftSyncMeta().dirty).length > 0;
+}
+
+function primeCloudDraftSync() {
+  const meta = readCloudDraftSyncMeta();
+  if (meta.initialized) return meta;
+  savedDrafts().forEach(({ date, draft }) => {
+    meta.dirty[date] = { updatedAt: draftUpdatedAt(draft) };
+  });
+  meta.initialized = true;
+  writeCloudDraftSyncMeta(meta);
+  return meta;
+}
+
+function cloudDraftPayload(draft) {
+  const normalized = normalizeDraft(draft);
+  // Draft attachments are only local until their journal entry is saved. Do not
+  // put base64 file data into Postgres; saved entries use private Storage instead.
+  const attachments = normalizeAttachments(normalized.attachments)
+    .filter((attachment) => attachment.storagePath)
+    .map(({ id, name, type, size, storagePath }) => ({ id, name, type, size, storagePath }));
+  return {
+    title: normalized.title,
+    content: normalized.content,
+    tags: normalized.tags,
+    mood: normalized.mood,
+    workContent: normalized.workContent,
+    aiSuggestion: normalized.aiSuggestion,
+    aiOriginal: normalized.aiOriginal,
+    workAiSuggestion: normalized.workAiSuggestion,
+    workAiOriginal: normalized.workAiOriginal,
+    originalContent: normalized.originalContent,
+    attachments,
+  };
+}
+
+function remoteDraftToLocal(record) {
+  const payload = record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+    ? record.payload
+    : {};
+  return normalizeDraft({ ...payload, updatedAt: record?.updated_at || payload.updatedAt || '' });
+}
+
+function writeDraftForDate(date, draft) {
+  const storageKey = draftStorageKeyForDate(date);
+  if (!storageKey || !draftHasContent(draft)) return false;
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(normalizeDraft(draft)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function currentEditorDraftForCloudSync() {
+  const saved = editorDraft();
+  return normalizeDraft({
+    ...saved,
+    title: elements.entryTitle.value,
+    mood: elements.entryMood.value,
+    tags: editorTags(),
+    content: elements.entryContent.value,
+  });
+}
+
+function saveVisibleDraftForCloudSync() {
+  const draft = currentEditorDraftForCloudSync();
+  const saved = editorDraft();
+  // Do not mint a new timestamp for an untouched cached draft. Doing so would
+  // make an older desktop copy win over a newer phone copy during startup.
+  if (draftHasContent(draft) && JSON.stringify(draft) !== JSON.stringify(saved)) saveDraft();
 }
 
 function updateDraftLibraryButton() {
@@ -1785,6 +1941,7 @@ function saveDraftObject(draft, message = '草稿已保存') {
   state.pastedDraft = null;
   const normalizedDraft = normalizeDraft({ ...draft, updatedAt: new Date().toISOString() });
   localStorage.setItem(storageKey, JSON.stringify(normalizedDraft));
+  markCloudDraftDirty(draftDateFromStorageKey(storageKey));
   elements.draftStatus.textContent = message;
   updateWordCount();
   updateDraftLibraryButton();
@@ -1856,6 +2013,7 @@ function removeDraftFromLibrary(storageKey) {
   if (!exists) return;
   clearTimeout(draftTimer);
   localStorage.removeItem(storageKey);
+  markCloudDraftDeleted(draftDateFromStorageKey(storageKey));
   if (storageKey === draftKey()) resetEditorDraftInputs();
   updateDraftLibraryButton();
   renderDraftLibrary();
@@ -1869,7 +2027,10 @@ function clearDraftLibrary() {
   if (!window.confirm(`确认移除草稿箱中的 ${drafts.length} 条草稿吗？此操作不会删除已保存的日记。`)) return;
   clearTimeout(draftTimer);
   const currentStorageKey = draftKey();
-  drafts.forEach(({ storageKey }) => localStorage.removeItem(storageKey));
+  drafts.forEach(({ storageKey }) => {
+    localStorage.removeItem(storageKey);
+    markCloudDraftDeleted(draftDateFromStorageKey(storageKey));
+  });
   if (drafts.some(({ storageKey }) => storageKey === currentStorageKey)) resetEditorDraftInputs();
   updateDraftLibraryButton();
   renderDraftLibrary();
@@ -1894,6 +2055,7 @@ function pasteDraftIntoEditor(storageKey) {
   if (!saved) return;
   clearTimeout(draftTimer);
   localStorage.removeItem(storageKey);
+  markCloudDraftDeleted(draftDateFromStorageKey(storageKey));
   state.pastedDraft = saved.draft;
   elements.entryTitle.value = saved.draft.title;
   elements.entryMood.value = normalizeMood(saved.draft.mood);
@@ -2777,7 +2939,9 @@ function saveNewEntry() {
     invalidateDailySummary(state.activeDate, now);
     reconcileEntryTasks([entry], now);
   })) return;
-  localStorage.removeItem(draftKey());
+  const savedDraftKey = draftKey();
+  localStorage.removeItem(savedDraftKey);
+  markCloudDraftDeleted(draftDateFromStorageKey(savedDraftKey));
   state.pastedDraft = null;
   updateDraftLibraryButton();
   elements.entryTitle.value = '';
@@ -3763,7 +3927,8 @@ function clearCloudDirty(kind, ids) {
 
 function hasCloudChanges() {
   const meta = state.data.cloudSync ?? emptyCloudMeta();
-  return Object.entries(meta.dirty).some(([kind, values]) => values.length > 0 && (kind !== 'tasks' || state.cloud.tasksSupported !== false));
+  return hasCloudDraftChanges()
+    || Object.entries(meta.dirty).some(([kind, values]) => values.length > 0 && (kind !== 'tasks' || state.cloud.tasksSupported !== false));
 }
 
 function readCloudConfig() {
@@ -3850,6 +4015,10 @@ function renderSyncStatus() {
     elements.syncStatus.textContent = '云同步失败，等待重试';
     return;
   }
+  if (state.cloud.draftsSupported === false && hasCloudDraftChanges()) {
+    elements.syncStatus.textContent = '草稿等待云端升级';
+    return;
+  }
   elements.syncStatus.textContent = hasCloudChanges()
     ? '等待云同步'
     : (state.cloud.attachmentsSupported === false ? '文本日记已同步（兼容模式）' : '云端已同步');
@@ -3863,13 +4032,13 @@ function renderCloudAccountDialog() {
   elements.syncPasswordRecoveryForm.hidden = !(session && state.cloud.passwordRecovery);
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
-    ? '这台设备会持续保持登录；打开手机或电脑时，日记和模型配置都会自动同步。'
+    ? '这台设备会持续保持登录；打开手机或电脑时，日记、草稿和模型配置都会自动同步。'
     : '登录或注册后会持续保持登录；打开、回到前台和每 10 分钟都会自动同步。';
   elements.syncLastSession.textContent = session
     ? '仅在你主动退出、清除站点数据或同步服务撤销会话后需要再次登录。'
     : '';
   elements.accountDialogCopy.textContent = session
-    ? '同一邮箱登录手机和电脑后，日记与模型配置都会自动合并到这个账号。'
+    ? '同一邮箱登录手机和电脑后，日记、草稿与模型配置都会自动合并到这个账号；草稿也会同步到同一账号的其他设备。'
     : '注册一个账号后，即可把日记同步到其他设备。';
   elements.cloudAccountButton.textContent = session ? '账号' : '登录';
   elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
@@ -4741,6 +4910,126 @@ function isMissingCloudBackupsTable(error) {
   return /journal_backups|PGRST205/i.test(message);
 }
 
+function isMissingCloudDraftsTable(error) {
+  const message = error instanceof Error ? error.message : '';
+  return /journal_drafts|PGRST205/i.test(message);
+}
+
+function cloudDraftOperationTime(operation) {
+  const timestamp = Date.parse(operation?.updatedAt || operation?.deletedAt || '');
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function clearCloudDraftOperation(meta, date) {
+  if (!meta?.dirty?.[date]) return false;
+  delete meta.dirty[date];
+  return true;
+}
+
+async function pullCloudDrafts() {
+  let records;
+  try {
+    records = await cloudRequest('/rest/v1/journal_drafts?select=draft_date,payload,updated_at,deleted_at&order=updated_at.desc');
+    state.cloud.draftsSupported = true;
+  } catch (error) {
+    if (!isMissingCloudDraftsTable(error)) throw error;
+    const shouldNotify = state.cloud.draftsSupported !== false;
+    state.cloud.draftsSupported = false;
+    if (shouldNotify) recordCloudActivity('云端草稿表尚未启用；已保存的日记仍可同步，草稿会留在当前设备等待升级', 'info');
+    return false;
+  }
+
+  const meta = primeCloudDraftSync();
+  let changed = false;
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const date = record?.draft_date;
+    if (!isDateKey(date)) return;
+    const storageKey = draftStorageKeyForDate(date);
+    const local = readDraft(storageKey);
+    const operation = meta.dirty[date];
+    const remoteTime = cloudUpdatedAt(record);
+    const operationTime = cloudDraftOperationTime(operation);
+    const remoteDeleted = Boolean(record?.deleted_at);
+
+    // A newer server value wins over an unsent local change. This makes the
+    // first sync on a second device import the latest draft instead of
+    // accidentally replacing it with an older cached copy.
+    if (operation && remoteTime > operationTime) {
+      if (remoteDeleted) localStorage.removeItem(storageKey);
+      else writeDraftForDate(date, remoteDraftToLocal(record));
+      clearCloudDraftOperation(meta, date);
+      changed = true;
+      return;
+    }
+    if (operation) return;
+
+    if (remoteDeleted) {
+      if (draftHasContent(local)) {
+        localStorage.removeItem(storageKey);
+        changed = true;
+      }
+      return;
+    }
+    const remote = remoteDraftToLocal(record);
+    if (!draftHasContent(local) || incomingWins(local, remote)) {
+      changed ||= writeDraftForDate(date, remote);
+    }
+  });
+  if (changed) updateDraftLibraryButton();
+  writeCloudDraftSyncMeta(meta);
+  return true;
+}
+
+async function pushCloudDrafts() {
+  if (state.cloud.draftsSupported === false) return false;
+  const meta = primeCloudDraftSync();
+  const pending = Object.entries(meta.dirty);
+  if (!pending.length) return true;
+  const userId = state.cloud.session?.user?.id;
+  if (!userId) return false;
+
+  try {
+    for (const [date, operation] of pending) {
+      const storageKey = draftStorageKeyForDate(date);
+      const draft = readDraft(storageKey);
+      const deletedAt = operation.deletedAt || (!draftHasContent(draft) ? operation.updatedAt : '');
+      const saved = await cloudRequest('/rest/v1/journal_drafts?on_conflict=user_id,draft_date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
+        body: JSON.stringify([{
+          user_id: userId,
+          draft_date: date,
+          payload: deletedAt ? {} : cloudDraftPayload(draft),
+          updated_at: operation.updatedAt || new Date().toISOString(),
+          deleted_at: deletedAt || null,
+        }]),
+      });
+      const remote = Array.isArray(saved) ? saved[0] : null;
+      if (remote?.deleted_at) {
+        localStorage.removeItem(storageKey);
+      } else if (remote) {
+        // Preserve unsaved local attachment data. The cloud payload only holds
+        // Storage paths, which are created after the user saves a journal entry.
+        const local = readDraft(storageKey);
+        writeDraftForDate(date, draftHasContent(local)
+          ? { ...local, updatedAt: remote.updated_at || local.updatedAt }
+          : remoteDraftToLocal(remote));
+      }
+      clearCloudDraftOperation(meta, date);
+      writeCloudDraftSyncMeta(meta);
+    }
+    state.cloud.draftsSupported = true;
+    updateDraftLibraryButton();
+    return true;
+  } catch (error) {
+    if (isMissingCloudDraftsTable(error)) {
+      state.cloud.draftsSupported = false;
+      return false;
+    }
+    throw error;
+  }
+}
+
 function entryToCloud(entry, userId) {
   const payload = {
     id: entry.id,
@@ -4904,9 +5193,21 @@ async function syncCloud({ quiet = false } = {}) {
         markAllCloudDirty();
         persistData({ queue: false });
       }
+      // Keep an edit that has not yet reached the debounce timer from being
+      // overwritten by an incoming draft while a manual sync is running.
+      saveVisibleDraftForCloudSync();
+      primeCloudDraftSync();
       await syncCloudAiSettings();
       await pullCloudData();
+      await pullCloudDrafts();
       await pushCloudChanges();
+      await pushCloudDrafts();
+      await pullCloudDrafts();
+      if (hasCloudDraftChanges()) {
+        throw new Error(state.cloud.draftsSupported === false
+          ? '草稿云同步尚未启用：请先执行最新的 Supabase 数据库结构。'
+          : '草稿仍在等待同步，请稍后重试。');
+      }
       await saveDailyCloudBackup(session.user.id);
       state.cloud.lastError = '';
       persistData({ queue: false });
@@ -5423,7 +5724,9 @@ function bindEvents() {
     renderTagEditor(elements.entryTagList, []);
     elements.entryContent.value = '';
     state.pastedDraft = null;
-    localStorage.removeItem(draftKey());
+    const clearedDraftKey = draftKey();
+    localStorage.removeItem(clearedDraftKey);
+    markCloudDraftDeleted(draftDateFromStorageKey(clearedDraftKey));
     updateDraftLibraryButton();
     updateWordCount();
     renderDraftAttachments([]);
@@ -5545,6 +5848,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260901-public-app-sync'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260901-cloud-drafts'));
   }
 }
