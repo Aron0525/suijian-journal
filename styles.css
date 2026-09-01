@@ -194,24 +194,16 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 
 @media (max-width: 760px) {
   .app-shell { width: min(calc(100% - 28px), 620px); padding-bottom: 44px; }
-  html { scroll-behavior: smooth; scroll-snap-type: y mandatory; }
   .journal-workspace { display: block; }
-  .mobile-page-nav { position: sticky; z-index: 4; top: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 16px; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: rgba(246,240,229,.94); box-shadow: 0 8px 20px rgba(55,40,26,.07); }
-  .mobile-page-nav a { display: grid; place-items: center; min-height: 40px; border-right: 1px solid var(--line); color: var(--ink-soft); font-size: 12px; text-decoration: none; }
-  .mobile-page-nav a:last-child { border-right: 0; }
-  .mobile-page-nav a:hover, .mobile-page-nav a:focus-visible { color: var(--clay-deep); background: rgba(198,109,76,.08); }
-  .home-page { display: flex; min-height: 100svh; padding: 30px 0 34px; scroll-snap-align: start; scroll-snap-stop: always; flex-direction: column; }
+  .home-page { display: block; min-height: 0; padding: 30px 0 0; }
   .home-page-writing { grid-column: auto; }
-  .home-page-calendar { grid-column: auto; justify-content: center; padding-top: 30px; }
-  .home-page-archive { grid-column: auto; height: 100svh; min-height: 100svh; overflow: hidden; }
-  .home-page-archive .archive-section { display: flex; flex: 1; min-height: 0; margin-top: 0; }
-  .home-page-archive .calendar-archive { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-  .home-page-archive .calendar-archive-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 5px; }
-  .mobile-scroll-cue { display: flex; justify-content: center; gap: 8px; margin: auto 0 0; padding-top: 20px; color: var(--ink-soft); font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em; }
-  .mobile-scroll-cue span { color: var(--clay-deep); font-size: 14px; line-height: .8; }
+  .home-page-calendar { grid-column: auto; padding-top: 44px; }
+  .home-page-archive { grid-column: auto; height: auto; min-height: 0; overflow: visible; }
+  .home-page-archive .archive-section { margin-top: 0; }
+  .home-page-archive .calendar-archive-list { overflow: visible; padding-right: 0; }
   .today-grid { grid-template-columns: minmax(0, 1fr); }
   .today-grid > * { min-width: 0; }
-  .topbar { flex-direction: column; align-items: stretch; min-height: 0; padding: 14px 0; gap: 12px; }
+  .topbar { position: relative; z-index: 6; flex-direction: column; align-items: stretch; min-height: 0; padding: 14px 0; gap: 12px; }
   .brand { font-size: 24px; }
   .brand-mark { width: 36px; height: 36px; font-size: 18px; }
   .nav-links { gap: 0; }
@@ -251,7 +243,6 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; scroll-snap-type: y proximity; }
   .view.active { animation: none; }
 }
 

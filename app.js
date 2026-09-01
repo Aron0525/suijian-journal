@@ -5538,5 +5538,5 @@ void initializeWritingReminders();
 initializeCloudSync();
 
 if ('serviceWorker' in navigator) {
-window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260830-admin-panel'));
+window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260901-mobile-natural-scroll'));
 }
