@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v40';
-const RELEASE = '20260901-cloud-drafts';
+const CACHE_NAME = 'suijian-pwa-v41';
+const RELEASE = '20260902-cloud-draft-fallback';
 const ASSETS = [
   './',
   './index.html',

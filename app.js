@@ -31,6 +31,8 @@ const AUTO_BACKUP_SNAPSHOT_COUNT = 3;
 const AUTO_BACKUP_DELAY_MS = 800;
 const CLOUD_DAILY_BACKUP_PREFIX = 'suijian-cloud-daily-backup-v1:';
 const CLOUD_DRAFT_SYNC_PREFIX = 'suijian-cloud-draft-sync-v1:';
+const CLOUD_DRAFT_FALLBACK_TITLE = '⟦岁笺草稿同步⟧';
+const CLOUD_DRAFT_FALLBACK_PREFIX = 'suijian-draft-payload-v1:';
 const CLOUD_DAILY_BACKUP_RETENTION_DAYS = 14;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_TAGS = 8;
@@ -310,7 +312,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, draftsSupported: null, backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', passwordRecovery: false },
+  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, draftsSupported: null, draftsStorageMode: '', backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', passwordRecovery: false },
   admin: emptyAdminState(),
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
@@ -748,6 +750,7 @@ function activateJournalAccount(userId) {
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
   state.cloud.draftsSupported = null;
+  state.cloud.draftsStorageMode = '';
   state.cloud.backupsSupported = null;
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
@@ -769,6 +772,7 @@ function clearJournalAccount() {
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
   state.cloud.draftsSupported = null;
+  state.cloud.draftsStorageMode = '';
   state.cloud.backupsSupported = null;
   state.cloud.aiConfigSupported = null;
   state.cloud.aiConfigError = '';
@@ -1258,6 +1262,71 @@ function remoteDraftToLocal(record) {
     ? record.payload
     : {};
   return normalizeDraft({ ...payload, updatedAt: record?.updated_at || payload.updatedAt || '' });
+}
+
+function isCloudDraftFallbackEntry(entry) {
+  return Boolean(
+    entry
+    && entry.title === CLOUD_DRAFT_FALLBACK_TITLE
+    && typeof entry.content === 'string'
+    && entry.content.startsWith(CLOUD_DRAFT_FALLBACK_PREFIX),
+  );
+}
+
+function cloudDraftFallbackPayload(entry) {
+  if (!isCloudDraftFallbackEntry(entry)) return null;
+  try {
+    const payload = JSON.parse(entry.content.slice(CLOUD_DRAFT_FALLBACK_PREFIX.length));
+    return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function cloudDraftFallbackRecord(entry) {
+  const payload = cloudDraftFallbackPayload(entry);
+  if (!payload || !isDateKey(entry?.entry_date)) return null;
+  return {
+    draft_date: entry.entry_date,
+    payload,
+    updated_at: entry.updated_at,
+    deleted_at: entry.deleted_at || null,
+  };
+}
+
+function stableDraftHash(value, seed) {
+  let hash = seed >>> 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = Math.imul(hash ^ value.charCodeAt(index), 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+function cloudDraftFallbackId(userId, date) {
+  const source = `${userId}:${date}:suijian-cloud-draft-v1`;
+  const hex = [
+    stableDraftHash(source, 0x811c9dc5),
+    stableDraftHash(source, 0x9e3779b9),
+    stableDraftHash(source, 0x85ebca6b),
+    stableDraftHash(source, 0xc2b2ae35),
+  ].join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+function cloudDraftFallbackEntry(date, draft, operation, userId) {
+  const deletedAt = operation.deletedAt || (!draftHasContent(draft) ? operation.updatedAt : '');
+  const timestamp = operation.updatedAt || draftUpdatedAt(draft);
+  return {
+    id: cloudDraftFallbackId(userId, date),
+    user_id: userId,
+    entry_date: date,
+    title: CLOUD_DRAFT_FALLBACK_TITLE,
+    content: deletedAt ? CLOUD_DRAFT_FALLBACK_PREFIX + '{}' : CLOUD_DRAFT_FALLBACK_PREFIX + JSON.stringify(cloudDraftPayload(draft)),
+    original_content: '',
+    created_at: timestamp,
+    updated_at: timestamp,
+    deleted_at: deletedAt || null,
+  };
 }
 
 function writeDraftForDate(date, draft) {
@@ -3928,7 +3997,7 @@ function clearCloudDirty(kind, ids) {
 function hasCloudChanges() {
   const meta = state.data.cloudSync ?? emptyCloudMeta();
   return hasCloudDraftChanges()
-    || Object.entries(meta.dirty).some(([kind, values]) => values.length > 0 && (kind !== 'tasks' || state.cloud.tasksSupported !== false));
+    || Object.values(meta.dirty).some((values) => values.length > 0);
 }
 
 function readCloudConfig() {
@@ -4015,7 +4084,7 @@ function renderSyncStatus() {
     elements.syncStatus.textContent = '云同步失败，等待重试';
     return;
   }
-  if (state.cloud.draftsSupported === false && hasCloudDraftChanges()) {
+  if (state.cloud.draftsSupported === false && state.cloud.draftsStorageMode !== 'entries-fallback' && hasCloudDraftChanges()) {
     elements.syncStatus.textContent = '草稿等待云端升级';
     return;
   }
@@ -4897,7 +4966,16 @@ async function pullCloudData() {
   } catch {
     state.cloud.tasksSupported = false;
   }
-  mergeRemoteData({ entries, dailySummaries, periodSummaries, tasks });
+  // A production project that has not yet applied the journal_drafts migration
+  // still needs drafts to travel with the signed-in account. In that short
+  // transition period, drafts are stored as private, hidden journal rows. Keep
+  // them out of the normal entry merge so they can never appear in the archive.
+  const cloudDraftFallbackEntries = (Array.isArray(entries) ? entries : [])
+    .filter((entry) => isCloudDraftFallbackEntry(entry));
+  const journalEntries = (Array.isArray(entries) ? entries : [])
+    .filter((entry) => !isCloudDraftFallbackEntry(entry));
+  mergeRemoteData({ entries: journalEntries, dailySummaries, periodSummaries, tasks });
+  return cloudDraftFallbackEntries;
 }
 
 function isMissingCloudAttachmentsColumn(error) {
@@ -4926,19 +5004,7 @@ function clearCloudDraftOperation(meta, date) {
   return true;
 }
 
-async function pullCloudDrafts() {
-  let records;
-  try {
-    records = await cloudRequest('/rest/v1/journal_drafts?select=draft_date,payload,updated_at,deleted_at&order=updated_at.desc');
-    state.cloud.draftsSupported = true;
-  } catch (error) {
-    if (!isMissingCloudDraftsTable(error)) throw error;
-    const shouldNotify = state.cloud.draftsSupported !== false;
-    state.cloud.draftsSupported = false;
-    if (shouldNotify) recordCloudActivity('云端草稿表尚未启用；已保存的日记仍可同步，草稿会留在当前设备等待升级', 'info');
-    return false;
-  }
-
+function applyRemoteCloudDrafts(records) {
   const meta = primeCloudDraftSync();
   let changed = false;
   (Array.isArray(records) ? records : []).forEach((record) => {
@@ -4980,7 +5046,76 @@ async function pullCloudDrafts() {
   return true;
 }
 
+function pullCloudDraftFallbackEntries(entries = []) {
+  const records = (Array.isArray(entries) ? entries : [])
+    .map((entry) => cloudDraftFallbackRecord(entry))
+    .filter(Boolean);
+  return applyRemoteCloudDrafts(records);
+}
+
+async function pullCloudDrafts(fallbackEntries = []) {
+  if (state.cloud.draftsStorageMode === 'entries-fallback') {
+    return pullCloudDraftFallbackEntries(fallbackEntries);
+  }
+
+  try {
+    const records = await cloudRequest('/rest/v1/journal_drafts?select=draft_date,payload,updated_at,deleted_at&order=updated_at.desc');
+    state.cloud.draftsSupported = true;
+    state.cloud.draftsStorageMode = 'table';
+    return applyRemoteCloudDrafts(records);
+  } catch (error) {
+    if (!isMissingCloudDraftsTable(error)) throw error;
+    const shouldNotify = state.cloud.draftsStorageMode !== 'entries-fallback';
+    state.cloud.draftsSupported = false;
+    state.cloud.draftsStorageMode = 'entries-fallback';
+    if (shouldNotify) recordCloudActivity('云端草稿表尚未启用；已使用兼容同步保存草稿', 'info');
+    return pullCloudDraftFallbackEntries(fallbackEntries);
+  }
+}
+
+function applySavedCloudDraft(date, remote, meta) {
+  const storageKey = draftStorageKeyForDate(date);
+  if (remote?.deleted_at) {
+    localStorage.removeItem(storageKey);
+  } else if (remote) {
+    // Preserve unsaved local attachment data. The cloud payload only holds
+    // Storage paths, which are created after the user saves a journal entry.
+    const local = readDraft(storageKey);
+    writeDraftForDate(date, draftHasContent(local)
+      ? { ...local, updatedAt: remote.updated_at || local.updatedAt }
+      : remoteDraftToLocal(remote));
+  }
+  clearCloudDraftOperation(meta, date);
+  writeCloudDraftSyncMeta(meta);
+}
+
+async function pushCloudDraftFallbackEntries() {
+  const meta = primeCloudDraftSync();
+  const pending = Object.entries(meta.dirty);
+  if (!pending.length) return true;
+  const userId = state.cloud.session?.user?.id;
+  if (!userId) return false;
+
+  for (const [date, operation] of pending) {
+    const storageKey = draftStorageKeyForDate(date);
+    const draft = readDraft(storageKey);
+    const saved = await cloudRequest('/rest/v1/journal_entries?on_conflict=id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify([cloudDraftFallbackEntry(date, draft, operation, userId)]),
+    });
+    const remote = cloudDraftFallbackRecord(Array.isArray(saved) ? saved[0] : null);
+    applySavedCloudDraft(date, remote, meta);
+  }
+  state.cloud.draftsStorageMode = 'entries-fallback';
+  updateDraftLibraryButton();
+  return true;
+}
+
 async function pushCloudDrafts() {
+  if (state.cloud.draftsStorageMode === 'entries-fallback') {
+    return pushCloudDraftFallbackEntries();
+  }
   if (state.cloud.draftsSupported === false) return false;
   const meta = primeCloudDraftSync();
   const pending = Object.entries(meta.dirty);
@@ -4990,8 +5125,7 @@ async function pushCloudDrafts() {
 
   try {
     for (const [date, operation] of pending) {
-      const storageKey = draftStorageKeyForDate(date);
-      const draft = readDraft(storageKey);
+      const draft = readDraft(draftStorageKeyForDate(date));
       const deletedAt = operation.deletedAt || (!draftHasContent(draft) ? operation.updatedAt : '');
       const saved = await cloudRequest('/rest/v1/journal_drafts?on_conflict=user_id,draft_date', {
         method: 'POST',
@@ -5004,27 +5138,17 @@ async function pushCloudDrafts() {
           deleted_at: deletedAt || null,
         }]),
       });
-      const remote = Array.isArray(saved) ? saved[0] : null;
-      if (remote?.deleted_at) {
-        localStorage.removeItem(storageKey);
-      } else if (remote) {
-        // Preserve unsaved local attachment data. The cloud payload only holds
-        // Storage paths, which are created after the user saves a journal entry.
-        const local = readDraft(storageKey);
-        writeDraftForDate(date, draftHasContent(local)
-          ? { ...local, updatedAt: remote.updated_at || local.updatedAt }
-          : remoteDraftToLocal(remote));
-      }
-      clearCloudDraftOperation(meta, date);
-      writeCloudDraftSyncMeta(meta);
+      applySavedCloudDraft(date, Array.isArray(saved) ? saved[0] : null, meta);
     }
     state.cloud.draftsSupported = true;
+    state.cloud.draftsStorageMode = 'table';
     updateDraftLibraryButton();
     return true;
   } catch (error) {
     if (isMissingCloudDraftsTable(error)) {
       state.cloud.draftsSupported = false;
-      return false;
+      state.cloud.draftsStorageMode = 'entries-fallback';
+      return pushCloudDraftFallbackEntries();
     }
     throw error;
   }
@@ -5168,8 +5292,10 @@ async function pushCloudChanges() {
         state.cloud.tasksSupported = true;
         mergeRemoteData({ tasks: saved || [] });
         clearCloudDirty('tasks', taskIds);
-      } catch {
+      } catch (error) {
         state.cloud.tasksSupported = false;
+        const message = error instanceof Error ? error.message : '未知错误';
+        throw new Error(`待办同步失败：${message}`);
       }
     }
   }
@@ -5197,14 +5323,23 @@ async function syncCloud({ quiet = false } = {}) {
       // overwritten by an incoming draft while a manual sync is running.
       saveVisibleDraftForCloudSync();
       primeCloudDraftSync();
-      await syncCloudAiSettings();
-      await pullCloudData();
-      await pullCloudDrafts();
+      const aiSettingsSynced = await syncCloudAiSettings();
+      if (!aiSettingsSynced && state.cloud.aiConfigSupported === false) {
+        throw new Error(`模型配置同步失败：${state.cloud.aiConfigError || '请检查云端数据表和网络连接'}`);
+      }
+      const cloudDraftFallbackEntries = await pullCloudData();
+      await pullCloudDrafts(cloudDraftFallbackEntries);
       await pushCloudChanges();
       await pushCloudDrafts();
-      await pullCloudDrafts();
+      const refreshedCloudDraftFallbackEntries = await pullCloudData();
+      await pullCloudDrafts(refreshedCloudDraftFallbackEntries);
+      if (cloudDirty('tasks').length) {
+        throw new Error(state.cloud.tasksSupported === false
+          ? '待办云同步尚未启用：请执行最新的 Supabase 数据库结构。'
+          : '待办仍在等待同步，请稍后重试。');
+      }
       if (hasCloudDraftChanges()) {
-        throw new Error(state.cloud.draftsSupported === false
+        throw new Error(state.cloud.draftsSupported === false && state.cloud.draftsStorageMode !== 'entries-fallback'
           ? '草稿云同步尚未启用：请先执行最新的 Supabase 数据库结构。'
           : '草稿仍在等待同步，请稍后重试。');
       }
@@ -5848,6 +5983,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260901-cloud-drafts'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260902-cloud-draft-fallback'));
   }
 }
