@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
-const [app, schema] = await Promise.all([
+const [app, schema, migration] = await Promise.all([
   readFile(new URL('app.js', root), 'utf8'),
   readFile(new URL('supabase/schema.sql', root), 'utf8'),
+  readFile(new URL('supabase/migrations/20260902000000_add_journal_drafts.sql', root), 'utf8'),
 ]);
 
 assert.match(schema, /create table if not exists public\.journal_drafts/i, 'cloud drafts need their own account-scoped table');
@@ -15,6 +16,9 @@ assert.match(schema, /deleted_at timestamptz/i);
 assert.match(schema, /primary key \(user_id, draft_date\)|unique \(user_id, draft_date\)/i);
 assert.match(schema, /alter table public\.journal_drafts enable row level security/i);
 assert.match(schema, /create policy "own journal drafts" on public\.journal_drafts/i);
+assert.match(migration, /create table if not exists public\.journal_drafts/i, 'the production change must be a CLI-applicable migration');
+assert.match(migration, /alter table public\.journal_drafts enable row level security/i);
+assert.match(migration, /create policy "own journal drafts" on public\.journal_drafts/i);
 
 assert.match(app, /const CLOUD_DRAFT_SYNC_PREFIX = 'suijian-cloud-draft-sync-v1:'/);
 assert.match(app, /function markCloudDraftDirty\(/);
