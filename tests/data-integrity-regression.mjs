@@ -206,6 +206,7 @@ assert.deepEqual([...repairedDuplicate.removedTaskIds], [staleDuplicate.id]);
 
 const mergeContext = vm.createContext({
   ...baseContext,
+  LEGACY_ENTRY_DETAILS_PREFIX: 'suijian-entry-details-v1:',
   state: {
     data: {
       entries: [{ ...localEntry }],
@@ -242,6 +243,7 @@ vm.runInContext([
   extractFunction(app, 'conflictCopyTitle'),
   extractFunction(app, 'createEntryConflictCopy'),
   extractFunction(app, 'shouldPreserveDirtyEntry'),
+  extractFunction(app, 'legacyEntryDetails'),
   extractFunction(app, 'remoteEntryToLocal'),
   extractFunction(app, 'remoteSummaryToLocal'),
   extractFunction(app, 'remotePeriodToLocal'),
@@ -267,6 +269,7 @@ assert.match(mergeContext.activity.message, /同步冲突副本/);
 
 const pushEchoContext = vm.createContext({
   ...baseContext,
+  LEGACY_ENTRY_DETAILS_PREFIX: 'suijian-entry-details-v1:',
   state: {
     data: {
       entries: [{ ...localEntry }],
@@ -303,6 +306,7 @@ vm.runInContext([
   extractFunction(app, 'conflictCopyTitle'),
   extractFunction(app, 'createEntryConflictCopy'),
   extractFunction(app, 'shouldPreserveDirtyEntry'),
+  extractFunction(app, 'legacyEntryDetails'),
   extractFunction(app, 'remoteEntryToLocal'),
   extractFunction(app, 'remoteSummaryToLocal'),
   extractFunction(app, 'remotePeriodToLocal'),

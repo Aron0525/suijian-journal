@@ -33,6 +33,7 @@ const CLOUD_DAILY_BACKUP_PREFIX = 'suijian-cloud-daily-backup-v1:';
 const CLOUD_DRAFT_SYNC_PREFIX = 'suijian-cloud-draft-sync-v1:';
 const CLOUD_DRAFT_FALLBACK_TITLE = '⟦岁笺草稿同步⟧';
 const CLOUD_DRAFT_FALLBACK_PREFIX = 'suijian-draft-payload-v1:';
+const LEGACY_ENTRY_DETAILS_PREFIX = 'suijian-entry-details-v1:';
 const CLOUD_DAILY_BACKUP_RETENTION_DAYS = 14;
 const MAX_ENTRY_TITLE_CHARS = 80;
 const MAX_ENTRY_TAGS = 8;
@@ -1255,6 +1256,33 @@ function cloudDraftPayload(draft) {
     originalContent: normalized.originalContent,
     attachments,
   };
+}
+
+function legacyEntryDetails(originalContent) {
+  if (typeof originalContent !== 'string' || !originalContent.startsWith(LEGACY_ENTRY_DETAILS_PREFIX)) return null;
+  try {
+    const details = JSON.parse(originalContent.slice(LEGACY_ENTRY_DETAILS_PREFIX.length));
+    if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
+    return {
+      originalContent: typeof details.originalContent === 'string' ? details.originalContent : '',
+      attachments: normalizeAttachments(details.attachments),
+      tags: normalizeTags(details.tags),
+      mood: normalizeMood(details.mood),
+      workContent: normalizeWorkContent(details.workContent),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function legacyEntryOriginalContent(entry) {
+  return `${LEGACY_ENTRY_DETAILS_PREFIX}${JSON.stringify({
+    originalContent: typeof entry?.originalContent === 'string' ? entry.originalContent : '',
+    attachments: normalizeAttachments(entry?.attachments),
+    tags: normalizeTags(entry?.tags),
+    mood: normalizeMood(entry?.mood),
+    workContent: normalizeWorkContent(entry?.workContent),
+  })}`;
 }
 
 function remoteDraftToLocal(record) {
@@ -4803,16 +4831,21 @@ function shouldPreserveDirtyEntry(local, remote, dirtyEntryIds) {
 }
 
 function remoteEntryToLocal(entry, localEntry = null) {
-  const preserveLocalAttachmentMetadata = state.cloud.attachmentsSupported === false && localEntry;
-  const payload = preserveLocalAttachmentMetadata
-    ? { files: normalizeAttachments(localEntry.attachments), tags: normalizeTags(localEntry.tags), mood: normalizeMood(localEntry.mood), workContent: normalizeWorkContent(localEntry.workContent) }
-    : attachmentPayload(entry.attachments);
+  // Decode prior compatibility rows even after the migration succeeds, so an
+  // older entry is never rendered as a serialized JSON string on a new client.
+  const legacyDetails = legacyEntryDetails(entry.original_content);
+  const preserveLocalAttachmentMetadata = state.cloud.attachmentsSupported === false && localEntry && !legacyDetails;
+  const payload = legacyDetails
+    ? { files: legacyDetails.attachments, tags: legacyDetails.tags, mood: legacyDetails.mood, workContent: legacyDetails.workContent }
+    : (preserveLocalAttachmentMetadata
+      ? { files: normalizeAttachments(localEntry.attachments), tags: normalizeTags(localEntry.tags), mood: normalizeMood(localEntry.mood), workContent: normalizeWorkContent(localEntry.workContent) }
+      : attachmentPayload(entry.attachments));
   return {
     id: entry.id,
     date: entry.entry_date,
     title: entry.title || '',
     content: entry.content || '',
-    originalContent: entry.original_content || '',
+    originalContent: legacyDetails?.originalContent ?? (entry.original_content || ''),
     attachments: normalizeAttachments(payload.files),
     tags: normalizeTags(payload.tags),
     mood: normalizeMood(payload.mood),
@@ -5161,7 +5194,10 @@ function entryToCloud(entry, userId) {
     entry_date: entry.date,
     title: entry.title || '',
     content: entry.content || '',
-    original_content: entry.originalContent || '',
+    // Old deployments can lack the attachments JSONB column and private
+    // Storage bucket. Keep optional metadata and the bounded attachment data
+    // in the existing RLS-protected text column until the schema is upgraded.
+    original_content: state.cloud.attachmentsSupported === false ? legacyEntryOriginalContent(entry) : (entry.originalContent || ''),
     created_at: entry.createdAt,
     updated_at: entry.updatedAt,
     deleted_at: entry.deletedAt || null,
@@ -5983,6 +6019,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260902-cloud-draft-fallback'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260902-entry-compat'));
   }
 }
