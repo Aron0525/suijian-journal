@@ -30,7 +30,7 @@ assert.match(app, /const CLOUD_DRAFT_FALLBACK_TITLE = '⟦岁笺草稿同步⟧'
 assert.match(app, /function isCloudDraftFallbackEntry\(/);
 assert.match(app, /async function pushCloudDraftFallbackEntries\(/);
 assert.match(app, /\/rest\/v1\/journal_entries\?on_conflict=id/);
-assert.match(app, /return cloudDraftFallbackEntries;/, 'hidden compatibility rows must be returned to the draft merge instead of the archive');
+assert.match(app, /draftFallbackEntries: cloudDraftFallbackEntries/, 'hidden compatibility rows must be returned to the draft merge instead of the archive');
 assert.match(app, /state\.cloud\.draftsStorageMode = 'entries-fallback';/, 'a missing draft table must switch to the compatibility writer');
 assert.match(app, /await pullCloudDrafts\([^)]*\);[\s\S]*await pushCloudDrafts\(\);[\s\S]*await pullCloudDrafts\([^)]*\);/, 'sync must verify the draft state after upload');
 assert.match(app, /markCloudDraftDirty\(draftDateFromStorageKey\(storageKey\)\)/, 'typing must queue the date-specific draft');

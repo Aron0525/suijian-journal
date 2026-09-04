@@ -4129,7 +4129,7 @@ function renderCloudAccountDialog() {
   elements.syncPasswordRecoveryForm.hidden = !(session && state.cloud.passwordRecovery);
   elements.syncAccountEmail.textContent = session?.user?.email || '';
   elements.syncAuthCopy.textContent = session
-    ? '这台设备会持续保持登录；打开手机或电脑时，日记、草稿和模型配置都会自动同步。'
+    ? '这台设备会持续保持登录；打开、回到前台、每 10 分钟或点击同步时，都会先核对该账号全部内容，再只传输新增或较新的内容。'
     : '登录或注册后会持续保持登录；打开、回到前台和每 10 分钟都会自动同步。';
   elements.syncLastSession.textContent = session
     ? '仅在你主动退出、清除站点数据或同步服务撤销会话后需要再次登录。'
@@ -4964,6 +4964,47 @@ function markAllCloudDirty() {
   });
 }
 
+function shouldQueueCloudRecord(local, remote) {
+  return !remote || cloudUpdatedAt(local) > cloudUpdatedAt(remote);
+}
+
+function reconcileCloudDeltas(remoteData = {}) {
+  const now = new Date().toISOString();
+  const remoteEntries = new Map((Array.isArray(remoteData.entries) ? remoteData.entries : []).map((record) => [record.id, record]));
+  const remoteDailySummaries = new Map((Array.isArray(remoteData.dailySummaries) ? remoteData.dailySummaries : []).map((record) => [record.entry_date, record]));
+  const remotePeriodSummaries = new Map((Array.isArray(remoteData.periodSummaries) ? remoteData.periodSummaries : []).map((record) => [record.id, record]));
+  const remoteTasks = new Map((Array.isArray(remoteData.tasks) ? remoteData.tasks : []).map((record) => [record.id, record]));
+  const queued = { entries: 0, dailySummaries: 0, periodSummaries: 0, tasks: 0 };
+
+  state.data.entries.forEach((entry) => {
+    ensureCloudMetadata(entry, now);
+    if (!shouldQueueCloudRecord(entry, remoteEntries.get(entry.id))) return;
+    markCloudDirty('entries', entry.id);
+    queued.entries += 1;
+  });
+  Object.keys(state.data.summaries).forEach((date) => {
+    const summary = summaryForDate(date);
+    if (!summary) return;
+    state.data.summaries[date] = ensureCloudMetadata(summary, now);
+    if (!shouldQueueCloudRecord(state.data.summaries[date], remoteDailySummaries.get(date))) return;
+    markCloudDirty('dailySummaries', date);
+    queued.dailySummaries += 1;
+  });
+  state.data.periodSummaries.forEach((summary) => {
+    ensureCloudMetadata(summary, now);
+    if (!shouldQueueCloudRecord(summary, remotePeriodSummaries.get(summary.id))) return;
+    markCloudDirty('periodSummaries', summary.id);
+    queued.periodSummaries += 1;
+  });
+  state.data.tasks.forEach((task) => {
+    ensureCloudMetadata(task, now);
+    if (!shouldQueueCloudRecord(task, remoteTasks.get(task.id))) return;
+    markCloudDirty('tasks', task.id);
+    queued.tasks += 1;
+  });
+  return queued;
+}
+
 async function pullCloudData() {
   const entryColumns = 'id,entry_date,title,content,original_content,attachments,created_at,updated_at,deleted_at';
   const legacyEntryColumns = 'id,entry_date,title,content,original_content,created_at,updated_at,deleted_at';
@@ -5008,7 +5049,13 @@ async function pullCloudData() {
   const journalEntries = (Array.isArray(entries) ? entries : [])
     .filter((entry) => !isCloudDraftFallbackEntry(entry));
   mergeRemoteData({ entries: journalEntries, dailySummaries, periodSummaries, tasks });
-  return cloudDraftFallbackEntries;
+  return {
+    entries: journalEntries,
+    dailySummaries,
+    periodSummaries,
+    tasks,
+    draftFallbackEntries: cloudDraftFallbackEntries,
+  };
 }
 
 function isMissingCloudAttachmentsColumn(error) {
@@ -5079,30 +5126,55 @@ function applyRemoteCloudDrafts(records) {
   return true;
 }
 
-function pullCloudDraftFallbackEntries(entries = []) {
-  const records = (Array.isArray(entries) ? entries : [])
+function cloudDraftFallbackRecords(entries = []) {
+  return (Array.isArray(entries) ? entries : [])
     .map((entry) => cloudDraftFallbackRecord(entry))
     .filter(Boolean);
+}
+
+function pullCloudDraftFallbackEntries(entries = []) {
+  const records = cloudDraftFallbackRecords(entries);
   return applyRemoteCloudDrafts(records);
+}
+
+function reconcileCloudDraftDeltas(records = []) {
+  const meta = primeCloudDraftSync();
+  const remoteByDate = new Map((Array.isArray(records) ? records : []).map((record) => [record.draft_date, record]));
+  let queued = 0;
+  savedDrafts().forEach(({ date, draft }) => {
+    if (meta.dirty[date]) return;
+    if (!shouldQueueCloudRecord(draft, remoteByDate.get(date))) {
+      return;
+    }
+    meta.dirty[date] = { updatedAt: draftUpdatedAt(draft) };
+    queued += 1;
+  });
+  if (queued) writeCloudDraftSyncMeta(meta);
+  return queued;
 }
 
 async function pullCloudDrafts(fallbackEntries = []) {
   if (state.cloud.draftsStorageMode === 'entries-fallback') {
-    return pullCloudDraftFallbackEntries(fallbackEntries);
+    const records = cloudDraftFallbackRecords(fallbackEntries);
+    applyRemoteCloudDrafts(records);
+    return records;
   }
 
   try {
     const records = await cloudRequest('/rest/v1/journal_drafts?select=draft_date,payload,updated_at,deleted_at&order=updated_at.desc');
     state.cloud.draftsSupported = true;
     state.cloud.draftsStorageMode = 'table';
-    return applyRemoteCloudDrafts(records);
+    applyRemoteCloudDrafts(records);
+    return Array.isArray(records) ? records : [];
   } catch (error) {
     if (!isMissingCloudDraftsTable(error)) throw error;
     const shouldNotify = state.cloud.draftsStorageMode !== 'entries-fallback';
     state.cloud.draftsSupported = false;
     state.cloud.draftsStorageMode = 'entries-fallback';
     if (shouldNotify) recordCloudActivity('云端草稿表尚未启用；已使用兼容同步保存草稿', 'info');
-    return pullCloudDraftFallbackEntries(fallbackEntries);
+    const records = cloudDraftFallbackRecords(fallbackEntries);
+    applyRemoteCloudDrafts(records);
+    return records;
   }
 }
 
@@ -5363,12 +5435,19 @@ async function syncCloud({ quiet = false } = {}) {
       if (!aiSettingsSynced && state.cloud.aiConfigSupported === false) {
         throw new Error(`模型配置同步失败：${state.cloud.aiConfigError || '请检查云端数据表和网络连接'}`);
       }
-      const cloudDraftFallbackEntries = await pullCloudData();
-      await pullCloudDrafts(cloudDraftFallbackEntries);
+      const firstCloudPull = await pullCloudData();
+      const firstCloudDraftRecords = await pullCloudDrafts(firstCloudPull.draftFallbackEntries);
+      const queuedRecords = reconcileCloudDeltas(firstCloudPull);
+      const queuedDrafts = reconcileCloudDraftDeltas(firstCloudDraftRecords);
+      const queuedCount = Object.values(queuedRecords).reduce((total, count) => total + count, 0) + queuedDrafts;
+      if (queuedCount) {
+        persistData({ queue: false });
+        if (!quiet) recordCloudActivity(`全量核对完成：补传 ${queuedCount} 项本机增量`, 'info');
+      }
       await pushCloudChanges();
       await pushCloudDrafts();
-      const refreshedCloudDraftFallbackEntries = await pullCloudData();
-      await pullCloudDrafts(refreshedCloudDraftFallbackEntries);
+      const finalCloudPull = await pullCloudData();
+      await pullCloudDrafts(finalCloudPull.draftFallbackEntries);
       if (cloudDirty('tasks').length) {
         throw new Error(state.cloud.tasksSupported === false
           ? '待办云同步尚未启用：请执行最新的 Supabase 数据库结构。'
@@ -6019,6 +6098,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260902-entry-compat'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260904-full-account-sync'));
   }
 }
