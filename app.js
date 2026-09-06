@@ -4968,6 +4968,30 @@ function shouldQueueCloudRecord(local, remote) {
   return !remote || cloudUpdatedAt(local) > cloudUpdatedAt(remote);
 }
 
+function prepareLocalEntryConflictsForFullSync(remoteEntries = []) {
+  const dirtyEntryIds = [...cloudDirty('entries')];
+  const remoteById = new Map((Array.isArray(remoteEntries) ? remoteEntries : []).map((record) => [record.id, record]));
+  const preserved = [];
+
+  // The initial pull is an inventory, not a merge. If an old client marked an
+  // entry dirty while another device already wrote a newer version, retain the
+  // local version as a separately-uploaded conflict copy before the final merge.
+  state.data.entries.forEach((entry) => {
+    if (!dirtyEntryIds.includes(entry.id)) return;
+    const remoteRecord = remoteById.get(entry.id);
+    if (!remoteRecord) return;
+    const remote = remoteEntryToLocal(remoteRecord, entry);
+    if (!incomingWins(entry, remote)) return;
+    preserved.push(createEntryConflictCopy(entry));
+    clearCloudDirty('entries', [entry.id]);
+  });
+
+  if (!preserved.length) return 0;
+  state.data.entries.push(...preserved);
+  preserved.forEach((entry) => markCloudDirty('entries', entry.id));
+  return preserved.length;
+}
+
 function reconcileCloudDeltas(remoteData = {}) {
   const now = new Date().toISOString();
   const remoteEntries = new Map((Array.isArray(remoteData.entries) ? remoteData.entries : []).map((record) => [record.id, record]));
@@ -5005,7 +5029,7 @@ function reconcileCloudDeltas(remoteData = {}) {
   return queued;
 }
 
-async function pullCloudData() {
+async function pullCloudData({ merge = true } = {}) {
   const entryColumns = 'id,entry_date,title,content,original_content,attachments,created_at,updated_at,deleted_at';
   const legacyEntryColumns = 'id,entry_date,title,content,original_content,created_at,updated_at,deleted_at';
   const summaryColumns = 'id,entry_date,content,model,created_at,updated_at,deleted_at';
@@ -5048,7 +5072,7 @@ async function pullCloudData() {
     .filter((entry) => isCloudDraftFallbackEntry(entry));
   const journalEntries = (Array.isArray(entries) ? entries : [])
     .filter((entry) => !isCloudDraftFallbackEntry(entry));
-  mergeRemoteData({ entries: journalEntries, dailySummaries, periodSummaries, tasks });
+  if (merge) mergeRemoteData({ entries: journalEntries, dailySummaries, periodSummaries, tasks });
   return {
     entries: journalEntries,
     dailySummaries,
@@ -5435,14 +5459,21 @@ async function syncCloud({ quiet = false } = {}) {
       if (!aiSettingsSynced && state.cloud.aiConfigSupported === false) {
         throw new Error(`模型配置同步失败：${state.cloud.aiConfigError || '请检查云端数据表和网络连接'}`);
       }
-      const firstCloudPull = await pullCloudData();
+      // Do not merge the first server read into the local cache. It is an
+      // inventory used to identify local additions and newer edits; the final
+      // pull below is the only step that applies server records locally.
+      const firstCloudPull = await pullCloudData({ merge: false });
       const firstCloudDraftRecords = await pullCloudDrafts(firstCloudPull.draftFallbackEntries);
+      const preservedConflictCount = prepareLocalEntryConflictsForFullSync(firstCloudPull.entries);
       const queuedRecords = reconcileCloudDeltas(firstCloudPull);
       const queuedDrafts = reconcileCloudDraftDeltas(firstCloudDraftRecords);
       const queuedCount = Object.values(queuedRecords).reduce((total, count) => total + count, 0) + queuedDrafts;
-      if (queuedCount) {
+      if (queuedCount || preservedConflictCount) {
         persistData({ queue: false });
-        if (!quiet) recordCloudActivity(`全量核对完成：补传 ${queuedCount} 项本机增量`, 'info');
+        if (!quiet) {
+          const conflictNote = preservedConflictCount ? `；保留 ${preservedConflictCount} 条同 ID 的本机冲突副本` : '';
+          recordCloudActivity(`全量核对完成：补传 ${queuedCount} 项本机增量${conflictNote}`, 'info');
+        }
       }
       await pushCloudChanges();
       await pushCloudDrafts();
@@ -6098,6 +6129,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260904-full-account-sync'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260906-full-sync-inventory'));
   }
 }

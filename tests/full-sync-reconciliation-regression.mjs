@@ -30,7 +30,7 @@ function extractFunction(source, name) {
 
 assert.match(app, /function reconcileCloudDeltas\(/, 'each sync needs a complete account reconciliation step');
 assert.match(app, /function reconcileCloudDraftDeltas\(/, 'saved drafts need reconciliation even when an old client left no dirty marker');
-assert.match(app, /const firstCloudPull = await pullCloudData\(\);[\s\S]*reconcileCloudDeltas\(firstCloudPull\);/, 'manual and scheduled sync must reconcile local records after the first server pull');
+assert.match(app, /const firstCloudPull = await pullCloudData\(\{ merge: false \}\);[\s\S]*prepareLocalEntryConflictsForFullSync\(firstCloudPull\.entries\);[\s\S]*reconcileCloudDeltas\(firstCloudPull\);/, 'the first server inventory must not overwrite local entries before reconciliation');
 assert.match(app, /reconcileCloudDraftDeltas\(firstCloudDraftRecords\);/, 'manual and scheduled sync must reconcile local drafts after the first server pull');
 assert.match(app, /const finalCloudPull = await pullCloudData\(\);[\s\S]*await pullCloudDrafts\(finalCloudPull\.draftFallbackEntries\);/, 'sync must fetch the final server state after incremental upload');
 
@@ -83,5 +83,28 @@ const equalRemote = reconciliationContext.reconcileCloudDeltas({
   tasks: [],
 });
 assert.equal(equalRemote.entries + equalRemote.dailySummaries, 0, 'the all-content check must only upload incremental records');
+
+const conflictContext = vm.createContext({
+  state: {
+    data: {
+      entries: [{ id: entryId, title: '电脑端旧版本', updatedAt: '2026-09-04T09:00:00.000Z' }],
+      cloudSync: { dirty: { entries: [entryId], dailySummaries: [], periodSummaries: [], tasks: [] } },
+    },
+  },
+});
+vm.runInContext([
+  'function cloudDirty(kind) { return state.data.cloudSync.dirty[kind]; }',
+  'function clearCloudDirty(kind, ids) { state.data.cloudSync.dirty[kind] = state.data.cloudSync.dirty[kind].filter((id) => !ids.includes(id)); }',
+  'function markCloudDirty(kind, id) { if (!state.data.cloudSync.dirty[kind].includes(id)) state.data.cloudSync.dirty[kind].push(id); }',
+  'function remoteEntryToLocal(record) { return { id: record.id, updatedAt: record.updated_at }; }',
+  'function incomingWins(local, remote) { return Date.parse(remote.updatedAt) > Date.parse(local.updatedAt); }',
+  "function createEntryConflictCopy(entry) { return { ...entry, id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', title: '同步冲突副本 · 电脑端旧版本' }; }",
+  extractFunction(app, 'prepareLocalEntryConflictsForFullSync'),
+].join('\n\n'), conflictContext);
+
+const preservedConflicts = conflictContext.prepareLocalEntryConflictsForFullSync([{ id: entryId, updated_at: '2026-09-04T10:00:00.000Z' }]);
+assert.equal(preservedConflicts, 1, 'a newer server record must not erase a locally dirty journal entry before the final merge');
+assert.equal(conflictContext.state.data.entries.length, 2, 'the locally dirty version must be retained as a separate journal conflict copy');
+assert.deepEqual([...conflictContext.state.data.cloudSync.dirty.entries], ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'], 'only the preserved conflict copy should be queued for upload');
 
 console.log('Full account sync reconciliation regression checks passed');

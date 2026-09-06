@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v43';
-const RELEASE = '20260904-full-account-sync';
+const CACHE_NAME = 'suijian-pwa-v44';
+const RELEASE = '20260906-full-sync-inventory';
 const ASSETS = [
   './',
   './index.html',
