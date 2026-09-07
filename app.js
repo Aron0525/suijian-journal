@@ -4902,7 +4902,7 @@ function mergeRemoteData({ entries = [], dailySummaries = [], periodSummaries = 
   entries.forEach((remoteRecord) => {
     const local = entryMap.get(remoteRecord.id);
     const remote = remoteEntryToLocal(remoteRecord, local);
-    if (!local || !incomingWins(local, remote)) return;
+    if (local && !incomingWins(local, remote)) return;
     if (preserveDirtyEntryConflicts && shouldPreserveDirtyEntry(local, remote, dirtyEntryIds)) {
       const conflictCopy = createEntryConflictCopy(local);
       entryMap.set(conflictCopy.id, conflictCopy);
@@ -6129,6 +6129,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260906-full-sync-inventory'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260906-remote-entry-merge'));
   }
 }

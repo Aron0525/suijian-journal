@@ -29,6 +29,7 @@ function extractFunction(source, name) {
 }
 
 assert.match(app, /function reconcileCloudDeltas\(/, 'each sync needs a complete account reconciliation step');
+assert.match(app, /if \(local && !incomingWins\(local, remote\)\) return;/, 'a remote record missing from a device cache must be merged into that device');
 assert.match(app, /function reconcileCloudDraftDeltas\(/, 'saved drafts need reconciliation even when an old client left no dirty marker');
 assert.match(app, /const firstCloudPull = await pullCloudData\(\{ merge: false \}\);[\s\S]*prepareLocalEntryConflictsForFullSync\(firstCloudPull\.entries\);[\s\S]*reconcileCloudDeltas\(firstCloudPull\);/, 'the first server inventory must not overwrite local entries before reconciliation');
 assert.match(app, /reconcileCloudDraftDeltas\(firstCloudDraftRecords\);/, 'manual and scheduled sync must reconcile local drafts after the first server pull');
