@@ -6,7 +6,7 @@ const ADMIN_EMAIL = 'rili66@outlook.com';
 const ALLOWED_ORIGINS = new Set([APP_ORIGIN, 'https://aron0525.github.io', 'capacitor://localhost', 'http://localhost', 'http://127.0.0.1:4173']);
 const USER_PAGE_SIZE = 100;
 const MAX_USER_PAGE = 100;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{3}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function corsHeaders(request: Request) {
   const origin = request.headers.get('origin') || '';
@@ -131,6 +131,7 @@ async function listUsers(request: Request, admin: SupabaseClient, actor: User, p
 }
 
 async function userData(request: Request, admin: SupabaseClient, actor: User, userId: string) {
+  userId = userId.trim();
   if (!UUID.test(userId)) throw Object.assign(new Error('用户标识无效'), { status: 400 });
   const userResult = await admin.auth.admin.getUserById(userId);
   if (userResult.error || !userResult.data.user) throw userResult.error || Object.assign(new Error('用户不存在'), { status: 404 });
@@ -176,7 +177,7 @@ async function userData(request: Request, admin: SupabaseClient, actor: User, us
 }
 
 async function changeUserState(request: Request, admin: SupabaseClient, actor: User, action: string, payload: Record<string, unknown>) {
-  const userId = String(payload.user_id || '');
+  const userId = String(payload.user_id || '').trim();
   if (!UUID.test(userId)) throw Object.assign(new Error('用户标识无效'), { status: 400 });
   if (userId === actor.id) throw Object.assign(new Error('管理员账号不可在此处停用'), { status: 400 });
   if (action === 'suspend_user' || action === 'restore_user') {
@@ -210,10 +211,10 @@ export default {
       if (request.method === 'GET' && action === 'status') return json(request, { is_admin: true, email: actor.email || '' });
       if (request.method === 'GET' && action === 'users') {
         const page = Math.min(Math.max(Number(url.searchParams.get('page')) || 1, 1), MAX_USER_PAGE);
-        return listUsers(request, admin, actor, page);
+        return await listUsers(request, admin, actor, page);
       }
-      if (request.method === 'GET' && action === 'user') return userData(request, admin, actor, url.searchParams.get('user_id') || '');
-      if (request.method === 'POST') return changeUserState(request, admin, actor, action, await request.json().catch(() => ({})));
+      if (request.method === 'GET' && action === 'user') return await userData(request, admin, actor, url.searchParams.get('user_id') || '');
+      if (request.method === 'POST') return await changeUserState(request, admin, actor, action, await request.json().catch(() => ({})));
       return json(request, { error: '不支持的管理员请求' }, 405);
     } catch (error) {
       const message = error instanceof Error ? error.message : '管理员服务请求失败';

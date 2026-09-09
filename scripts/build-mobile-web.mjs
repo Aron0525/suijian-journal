@@ -8,9 +8,9 @@ const runFile = promisify(execFile);
 const output = new URL('../dist-mobile/', import.meta.url);
 const outputPath = fileURLToPath(output);
 const files = ['index.html', 'index.htm', 'styles.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'icon.svg'];
-// Release assets use the legacy Pages URL for one compatibility cycle. Old
-// Android shells trust this origin, while GitHub redirects it to 933647.xyz.
-const releaseAssetBaseUrl = 'https://aron0525.github.io/suijian-journal';
+// Keep update downloads on the product domain. The repository remains the
+// publishing source, while phones no longer depend on reaching github.io.
+const releaseAssetBaseUrl = 'https://933647.xyz';
 
 async function listBundleFiles(directory, prefix = '') {
   const names = await readdir(directory, { withFileTypes: true });

@@ -6357,6 +6357,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260910-admin-data-v1'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260910-admin-ota-v2'));
   }
 }

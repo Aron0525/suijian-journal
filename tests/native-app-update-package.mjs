@@ -28,7 +28,7 @@ await runFile('node', [
 const manifest = JSON.parse(await readFile(join(outputPath, 'native-app-update.json'), 'utf8'));
 assert.equal(manifest.versionCode, version.versionCode);
 assert.equal(manifest.versionName, version.versionName);
-assert.equal(manifest.apkUrl, `https://aron0525.github.io/suijian-journal/downloads/suijian-android-v${version.versionName}.apk`);
+assert.equal(manifest.apkUrl, `https://933647.xyz/downloads/suijian-android-v${version.versionName}.apk`);
 assert.equal(manifest.checksum, createHash('sha256').update(apkBytes).digest('hex'));
 assert.equal(await readFile(join(outputPath, 'downloads', `suijian-android-v${version.versionName}.apk`), 'utf8'), apkBytes.toString());
 

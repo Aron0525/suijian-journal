@@ -2,9 +2,7 @@ import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-// Keep the downloadable asset URL compatible with Android shells installed
-// before the custom-domain migration. The legacy URL redirects to 933647.xyz.
-const DEFAULT_BASE_URL = 'https://aron0525.github.io/suijian-journal';
+const DEFAULT_BASE_URL = 'https://933647.xyz';
 const args = process.argv.slice(2);
 
 function option(name, fallback = '') {
