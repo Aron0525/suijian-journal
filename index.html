@@ -502,9 +502,16 @@
               </div>
             </form>
             <div class="sync-auth-actions">
-              <button id="admin-panel-button" type="button" class="quiet-button" hidden>管理员面板</button>
               <button id="sync-sign-out" type="button" class="quiet-button">退出账号</button>
             </div>
+            <section id="admin-entry-card" class="admin-entry-card card" hidden aria-labelledby="admin-entry-title">
+              <div class="sync-card-head">
+                <div><span class="prompt-kicker">仅管理员可见</span><strong id="admin-entry-title">管理员控制台</strong></div>
+                <span id="admin-entry-status" class="sync-config-status" aria-live="polite">正在核验权限</span>
+              </div>
+              <p>查看用户及其云端数据，发送密码重设邮件，或停用、恢复账号。所有操作都会记录审计日志。</p>
+              <button id="admin-panel-button" type="button" class="primary-button">进入管理员控制台</button>
+            </section>
           </div>
         </section>
         <section id="mobile-update-panel" class="sync-card mobile-update-card card" hidden aria-labelledby="mobile-update-title">
@@ -670,6 +677,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260909-sync-core-v2" defer></script>
+    <script src="./app.js?release=20260909-admin-console-v2" defer></script>
   </body>
 </html>

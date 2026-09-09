@@ -1,5 +1,5 @@
-const CACHE_NAME = 'suijian-pwa-v46';
-const RELEASE = '20260909-sync-core-v2';
+const CACHE_NAME = 'suijian-pwa-v47';
+const RELEASE = '20260909-admin-console-v2';
 const ASSETS = [
   './',
   './index.html',

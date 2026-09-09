@@ -11,6 +11,7 @@ const LEGACY_STORAGE_KEY = 'suijian-calendar-journal-v1';
 const DEFAULT_SUPABASE_URL = 'https://ekotpodfgbkcykfcewmc.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_3TEgVHOwGufdfu_DHcvGLg_XD0tXovA';
 const ADMIN_FUNCTION_NAME = 'admin-panel';
+const ADMIN_EMAIL = 'rili66@outlook.com';
 const MAX_PERIOD_INPUT_CHARS = 60000;
 const MAX_IMPORT_BYTES = 12 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 4;
@@ -302,6 +303,7 @@ function emptyAdminState() {
     selectedData: null,
     detailLoading: false,
     error: '',
+    permissionError: '',
   };
 }
 
@@ -504,6 +506,8 @@ const elements = {
   syncNowButton: document.querySelector('#sync-now-button'),
   syncSignOut: document.querySelector('#sync-sign-out'),
   adminPanelButton: document.querySelector('#admin-panel-button'),
+  adminEntryCard: document.querySelector('#admin-entry-card'),
+  adminEntryStatus: document.querySelector('#admin-entry-status'),
   adminDialog: document.querySelector('#admin-dialog'),
   closeAdminDialog: document.querySelector('#close-admin-dialog'),
   adminRefreshUsers: document.querySelector('#admin-refresh-users'),
@@ -4127,8 +4131,13 @@ function renderSyncStatus() {
     : (state.cloud.attachmentsSupported === false ? '文本日记已同步（兼容模式）' : '云端已同步');
 }
 
+function isAdminSessionCandidate(session = state.cloud.session) {
+  return Boolean(session?.user?.id && (session.user.email || '').trim().toLowerCase() === ADMIN_EMAIL);
+}
+
 function renderCloudAccountDialog() {
   const session = state.cloud.session;
+  const adminCandidate = isAdminSessionCandidate(session);
   elements.syncAccountStatus.textContent = session ? '已登录' : '未登录';
   elements.syncAuthForm.hidden = Boolean(session);
   elements.syncSignedIn.hidden = !session;
@@ -4145,7 +4154,14 @@ function renderCloudAccountDialog() {
     : '注册一个账号后，即可把日记同步到其他设备。';
   elements.cloudAccountButton.textContent = session ? '账号' : '登录';
   elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
-  if (elements.adminPanelButton) elements.adminPanelButton.hidden = !(session && state.admin.isAdmin);
+  elements.adminEntryCard.hidden = !adminCandidate;
+  if (adminCandidate) {
+    elements.adminEntryStatus.textContent = state.admin.checking
+      ? '正在核验权限'
+      : (state.admin.isAdmin ? '权限已启用' : (state.admin.permissionError ? '核验失败，可重试' : '等待服务器核验'));
+    elements.adminPanelButton.disabled = state.admin.checking;
+    elements.adminPanelButton.textContent = state.admin.checking ? '正在核验…' : '进入管理员控制台';
+  }
 }
 
 function adminDateLabel(value) {
@@ -4288,23 +4304,25 @@ async function adminRequest(action, { method = 'GET', query = {}, body = null, r
   return payload;
 }
 
-async function checkAdminAccess() {
+async function checkAdminAccess({ force = false } = {}) {
   const userId = state.cloud.session?.user?.id || '';
   if (!userId || !isCloudConfigured()) {
     state.admin = emptyAdminState();
     renderCloudAccountDialog();
     return false;
   }
-  if (state.admin.checkedUserId === userId && !state.admin.checking) return state.admin.isAdmin;
+  if (!force && state.admin.checkedUserId === userId && !state.admin.checking) return state.admin.isAdmin;
   state.admin = { ...emptyAdminState(), checkedUserId: userId, checking: true };
   renderCloudAccountDialog();
   try {
     const payload = await adminRequest('status');
     if (state.cloud.session?.user?.id !== userId) return false;
     state.admin.isAdmin = payload?.is_admin === true;
+    state.admin.permissionError = state.admin.isAdmin ? '' : '服务器未授予管理员权限';
   } catch (error) {
     if (state.cloud.session?.user?.id !== userId) return false;
     state.admin.isAdmin = false;
+    state.admin.permissionError = error instanceof Error ? error.message : '管理员服务暂时不可用';
     // Non-administrators receive the same ordinary account experience; detailed
     // server diagnostics stay out of the public account UI.
     console.info('Admin panel is unavailable for the current account.', error);
@@ -4364,8 +4382,11 @@ function closeAdminDialog() {
 }
 
 async function openAdminDialog() {
-  const isAdmin = await checkAdminAccess();
-  if (!isAdmin) return;
+  const isAdmin = await checkAdminAccess({ force: true });
+  if (!isAdmin) {
+    showToast(`管理员权限核验失败：${state.admin.permissionError || '请稍后重试'}`);
+    return;
+  }
   renderAdminPanel();
   openWorkspaceDialog(elements.adminDialog, elements.adminRefreshUsers);
   await loadAdminUsers();
@@ -6176,6 +6197,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-sync-core-v2'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-admin-console-v2'));
   }
 }

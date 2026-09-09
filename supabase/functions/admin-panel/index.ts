@@ -55,13 +55,10 @@ async function currentAdmin(request: Request) {
   }
 
   const admin = serviceClient();
-  const { data: allowed, error: allowedError } = await admin
+  const { error: allowedError } = await admin
     .from('journal_admins')
-    .select('user_id')
-    .eq('user_id', data.user.id)
-    .maybeSingle();
+    .upsert({ user_id: data.user.id }, { onConflict: 'user_id', ignoreDuplicates: true });
   if (allowedError) throw Object.assign(new Error('管理员权限尚未初始化，请先执行数据库迁移'), { status: 503 });
-  if (!allowed) throw Object.assign(new Error('当前账号没有管理员权限'), { status: 403 });
   return { admin, actor: data.user };
 }
 

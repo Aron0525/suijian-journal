@@ -317,6 +317,10 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 .sync-signed-in p { margin: 0 0 16px; color: var(--ink-soft); font-size: 13px; }
 .sync-signed-in strong { color: var(--ink); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
 .sync-auth-copy, .sync-session-copy { margin: -3px 0 14px; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
+.admin-entry-card { margin-top: 18px; padding: 18px; border-top: 3px solid var(--clay); border-radius: 4px 20px 4px 4px; box-shadow: none; }
+.admin-entry-card[hidden] { display: none; }
+.admin-entry-card p { margin: 13px 0 16px; color: var(--ink-soft); font-size: 12px; line-height: 1.7; }
+.admin-entry-card .primary-button { width: 100%; }
 .admin-dialog { width: min(940px, calc(100% - 32px)); }
 .admin-toolbar, .admin-user-actions, .admin-user-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .admin-toolbar { margin: 20px 0 14px; }
@@ -670,4 +674,150 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .ai-config-dialog .dialog-actions { margin-top: 7px; }
   .ai-config-dialog .dialog-actions .quiet-button, .ai-config-dialog .dialog-actions .primary-button { min-height: 36px; padding: 7px 10px; }
   .prompt-editor-dialog textarea { min-height: 88px; max-height: 88px; }
+}
+
+/* 桌面端双栏工作台 */
+@media (min-width: 761px) {
+  .app-shell {
+    width: min(1240px, calc(100% - 56px));
+    padding-bottom: 64px;
+  }
+
+  .topbar {
+    min-height: 88px;
+    gap: 30px;
+  }
+
+  .top-actions {
+    gap: 7px;
+  }
+
+  .top-tools {
+    overflow: hidden;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 252, 246, .58);
+    box-shadow: 0 8px 22px rgba(55, 40, 26, .055);
+  }
+
+  .top-text-action {
+    min-height: 32px;
+    padding: 6px 11px;
+  }
+
+  .top-search-action {
+    width: 34px;
+    height: 32px;
+  }
+
+  .top-tool-divider {
+    height: 15px;
+  }
+
+  .sync-status {
+    padding-right: 8px;
+  }
+
+  .journal-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 360px);
+    gap: 0 30px;
+  }
+
+  .view,
+  .home-page-calendar {
+    padding-top: 46px;
+  }
+
+  .home-page-writing {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .home-page-calendar {
+    padding-top: clamp(144px, 11vw, 157px);
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+
+  .home-page-calendar .today-calendar {
+    position: sticky;
+    top: 24px;
+  }
+
+  .home-page-archive {
+    grid-column: 1;
+    grid-row: 2;
+    padding-top: 0;
+  }
+
+  .hero-row {
+    margin-bottom: 23px;
+  }
+
+  .hero-row h1 {
+    font-size: clamp(40px, 4.2vw, 54px);
+  }
+
+  .hero-note {
+    gap: 9px;
+    padding-bottom: 5px;
+    font-size: 12px;
+  }
+
+  .editor-panel {
+    padding: 27px 28px 25px;
+  }
+
+  .editor-panel textarea {
+    min-height: 240px;
+  }
+
+  .panel-heading {
+    margin-bottom: 20px;
+  }
+
+  .editor-actions {
+    gap: 10px;
+  }
+
+  .today-calendar {
+    padding: 24px;
+    box-shadow: 0 16px 42px rgba(55, 40, 26, .09);
+  }
+
+  .today-calendar-head {
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .today-calendar-head .eyebrow {
+    margin-top: 0;
+  }
+
+  .calendar-day {
+    min-height: 39px;
+  }
+
+  .archive-section {
+    margin-top: 28px;
+  }
+
+  .calendar-archive {
+    padding: 27px 28px 30px;
+    box-shadow: 0 16px 42px rgba(55, 40, 26, .09);
+  }
+
+  .calendar-archive-head h1 {
+    font-size: 40px;
+  }
+
+  .writing-rhythm {
+    margin-top: 19px;
+  }
+
+  .archive-jump-bar {
+    margin-top: 21px;
+  }
 }
