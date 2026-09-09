@@ -315,6 +315,20 @@ alter table public.admin_audit_events enable row level security;
 revoke all on table public.journal_admins, public.admin_audit_events from anon, authenticated;
 grant select, insert, update, delete on table public.journal_admins, public.admin_audit_events to service_role;
 
+-- The administrator Edge Function reads account-owned content with the service
+-- role. BYPASSRLS does not replace ordinary table privileges, so grant read
+-- access explicitly instead of relying on project defaults.
+grant select on table
+  public.journal_entries,
+  public.journal_drafts,
+  public.daily_summaries,
+  public.period_summaries,
+  public.journal_tasks,
+  public.journal_backups,
+  public.ai_settings
+to service_role;
+grant select on table storage.objects to service_role;
+
 -- Initial allow-list. If the account has not yet been created, this statement
 -- safely inserts no row; re-run this schema after the account exists.
 insert into public.journal_admins (user_id)

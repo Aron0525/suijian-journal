@@ -79,6 +79,40 @@ function safeAiSettings(record: Record<string, unknown> | null) {
   return record ? { ...record, config, api_key_configured: Boolean((record.config as Record<string, unknown>)?.apiKey) } : null;
 }
 
+async function queryUserDataset(label: string, query: PromiseLike<{ data: unknown; error: { message?: string } | null }>) {
+  try {
+    const result = await query;
+    return {
+      data: result.error ? [] : (result.data ?? []),
+      warning: result.error ? `${label}：${result.error.message || '读取失败'}` : '',
+    };
+  } catch (error) {
+    return { data: [], warning: `${label}：${error instanceof Error ? error.message : '读取失败'}` };
+  }
+}
+
+async function listAttachmentFiles(admin: SupabaseClient, userId: string) {
+  const bucket = admin.storage.from('journal-attachments');
+  const queue = [userId];
+  const files: Record<string, unknown>[] = [];
+  const warnings: string[] = [];
+  while (queue.length && files.length < 2000) {
+    const prefix = queue.shift() || userId;
+    const { data, error } = await bucket.list(prefix, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+    if (error) {
+      warnings.push(`附件目录 ${prefix}：${error.message}`);
+      continue;
+    }
+    for (const item of data || []) {
+      const path = `${prefix}/${item.name}`;
+      if (item.id) files.push({ ...item, path });
+      else queue.push(path);
+    }
+  }
+  if (queue.length) warnings.push('附件超过 2000 个，本次只显示前 2000 个。');
+  return { files, warnings };
+}
+
 async function listUsers(request: Request, admin: SupabaseClient, actor: User, page: number) {
   const { data, error } = await admin.auth.admin.listUsers({ page, perPage: USER_PAGE_SIZE });
   if (error) throw error;
@@ -98,37 +132,45 @@ async function listUsers(request: Request, admin: SupabaseClient, actor: User, p
 
 async function userData(request: Request, admin: SupabaseClient, actor: User, userId: string) {
   if (!UUID.test(userId)) throw Object.assign(new Error('用户标识无效'), { status: 400 });
-  const [userResult, entriesResult, dailyResult, periodResult, taskResult, backupResult, aiResult] = await Promise.all([
-    admin.auth.admin.getUserById(userId),
-    admin.from('journal_entries').select('id,entry_date,title,content,original_content,attachments,created_at,updated_at,deleted_at').eq('user_id', userId).order('updated_at', { ascending: false }),
-    admin.from('daily_summaries').select('id,entry_date,content,model,created_at,updated_at,deleted_at').eq('user_id', userId).order('updated_at', { ascending: false }),
-    admin.from('period_summaries').select('id,start_date,end_date,entry_ids,content,model,created_at,updated_at,deleted_at').eq('user_id', userId).order('updated_at', { ascending: false }),
-    admin.from('journal_tasks').select('id,entry_id,source_key,content,completed,created_at,updated_at,deleted_at').eq('user_id', userId).order('updated_at', { ascending: false }),
-    admin.from('journal_backups').select('id,backup_date,payload,created_at').eq('user_id', userId).order('backup_date', { ascending: false }),
-    admin.from('ai_settings').select('config,created_at,updated_at').eq('user_id', userId).maybeSingle(),
+  const userResult = await admin.auth.admin.getUserById(userId);
+  if (userResult.error || !userResult.data.user) throw userResult.error || Object.assign(new Error('用户不存在'), { status: 404 });
+  const [entries, drafts, daily, periods, tasks, backups, aiSettings, attachmentResult] = await Promise.all([
+    queryUserDataset('日记', admin.from('journal_entries').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
+    queryUserDataset('草稿', admin.from('journal_drafts').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
+    queryUserDataset('当天摘要', admin.from('daily_summaries').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
+    queryUserDataset('阶段总结', admin.from('period_summaries').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
+    queryUserDataset('待办', admin.from('journal_tasks').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
+    queryUserDataset('云端备份', admin.from('journal_backups').select('*').eq('user_id', userId).order('backup_date', { ascending: false })),
+    queryUserDataset('模型配置', admin.from('ai_settings').select('*').eq('user_id', userId).maybeSingle()),
+    listAttachmentFiles(admin, userId),
   ]);
-  const errors = [userResult.error, entriesResult.error, dailyResult.error, periodResult.error, taskResult.error, backupResult.error, aiResult.error].filter(Boolean);
-  if (errors.length) throw errors[0];
-
-  const attachments = await admin.storage.from('journal-attachments').list(userId, { limit: 1000 }).catch(() => ({ data: [] }));
-  await audit(admin, actor, 'view_user_data', userId, { entry_count: entriesResult.data?.length || 0 });
+  const warnings = [entries.warning, drafts.warning, daily.warning, periods.warning, tasks.warning, backups.warning, aiSettings.warning, ...attachmentResult.warnings].filter(Boolean);
+  const entryRows = Array.isArray(entries.data) ? entries.data : [];
+  await audit(admin, actor, 'view_user_data', userId, { entry_count: entryRows.length, warnings });
+  const targetUser = userResult.data.user;
+  const providers = Array.isArray(targetUser.app_metadata?.providers)
+    ? targetUser.app_metadata.providers.map(String)
+    : (targetUser.app_metadata?.provider ? [String(targetUser.app_metadata.provider)] : []);
   return json(request, {
     user: {
-      id: userResult.data.user.id,
-      email: userResult.data.user.email || '',
-      created_at: userResult.data.user.created_at,
-      last_sign_in_at: userResult.data.user.last_sign_in_at || null,
-      email_confirmed_at: userResult.data.user.email_confirmed_at || null,
-      banned_until: userResult.data.user.banned_until || null,
+      id: targetUser.id,
+      email: targetUser.email || '',
+      created_at: targetUser.created_at,
+      last_sign_in_at: targetUser.last_sign_in_at || null,
+      email_confirmed_at: targetUser.email_confirmed_at || null,
+      banned_until: targetUser.banned_until || null,
+      credential: { providers, password_login_available: providers.includes('email') },
     },
     data: {
-      entries: entriesResult.data || [],
-      daily_summaries: dailyResult.data || [],
-      period_summaries: periodResult.data || [],
-      tasks: taskResult.data || [],
-      backups: backupResult.data || [],
-      ai_settings: safeAiSettings(aiResult.data),
-      attachment_folders: attachments.data || [],
+      entries: entryRows,
+      drafts: Array.isArray(drafts.data) ? drafts.data : [],
+      daily_summaries: Array.isArray(daily.data) ? daily.data : [],
+      period_summaries: Array.isArray(periods.data) ? periods.data : [],
+      tasks: Array.isArray(tasks.data) ? tasks.data : [],
+      backups: Array.isArray(backups.data) ? backups.data : [],
+      ai_settings: safeAiSettings(aiSettings.data && !Array.isArray(aiSettings.data) ? aiSettings.data as Record<string, unknown> : null),
+      attachments: attachmentResult.files,
+      data_warnings: warnings,
     },
   });
 }

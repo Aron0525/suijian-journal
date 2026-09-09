@@ -32,6 +32,8 @@
             <span class="top-tool-divider" aria-hidden="true"></span>
             <button id="cloud-sync-button" class="top-text-action top-sync-action" type="button" aria-label="同步日记">同步</button>
             <span class="top-tool-divider" aria-hidden="true"></span>
+            <button id="admin-shortcut-button" class="top-text-action admin-shortcut-action" type="button" hidden>管理</button>
+            <span id="admin-shortcut-divider" class="top-tool-divider" aria-hidden="true" hidden></span>
             <button id="cloud-account-button" class="top-text-action account-action" type="button">账号</button>
           </div>
           <span id="sync-status" class="sync-status" aria-live="polite">本地已保存</span>
@@ -588,7 +590,7 @@
             <h1 id="admin-dialog-title">管理员面板</h1>
           </div>
         </div>
-        <p class="dialog-copy">可查看已注册用户及其保存的日记数据。密码始终不可读取；需要时可向用户发送重设密码邮件。</p>
+        <p class="dialog-copy">可查看每个账号保存在服务器上的日记、草稿、总结、待办、备份、附件记录和模型配置状态。认证密码只保存不可逆哈希，原密码不可读取；需要时可发送重设密码邮件。</p>
         <div class="admin-toolbar" role="group" aria-label="管理员操作">
           <button id="admin-refresh-users" type="button" class="primary-button">刷新用户</button>
           <span id="admin-status" class="sync-config-status" aria-live="polite">正在检查权限</span>
@@ -607,7 +609,40 @@
             <button id="admin-toggle-user-suspension" type="button" class="quiet-button danger-button">停用账号</button>
           </div>
           <p id="admin-user-summary" class="admin-user-summary"></p>
-          <pre id="admin-user-data" class="admin-user-data"></pre>
+          <div class="admin-data-sections">
+            <section class="admin-data-section" aria-labelledby="admin-account-overview-title">
+              <h3 id="admin-account-overview-title">账号信息</h3>
+              <div id="admin-account-overview" class="admin-account-overview"></div>
+            </section>
+            <section class="admin-data-section" aria-labelledby="admin-entry-list-title">
+              <h3 id="admin-entry-list-title">日记内容</h3>
+              <div id="admin-entry-list" class="admin-record-list"></div>
+            </section>
+            <section class="admin-data-section" aria-labelledby="admin-draft-list-title">
+              <h3 id="admin-draft-list-title">草稿</h3>
+              <div id="admin-draft-list" class="admin-record-list"></div>
+            </section>
+            <section class="admin-data-section" aria-labelledby="admin-summary-list-title">
+              <h3 id="admin-summary-list-title">AI 摘要与阶段总结</h3>
+              <div id="admin-summary-list" class="admin-record-list"></div>
+            </section>
+            <section class="admin-data-section" aria-labelledby="admin-task-list-title">
+              <h3 id="admin-task-list-title">待办</h3>
+              <div id="admin-task-list" class="admin-record-list"></div>
+            </section>
+            <section class="admin-data-section" aria-labelledby="admin-backup-list-title">
+              <h3 id="admin-backup-list-title">云端备份与附件</h3>
+              <div id="admin-backup-list" class="admin-record-list"></div>
+            </section>
+            <section class="admin-data-section" aria-labelledby="admin-model-overview-title">
+              <h3 id="admin-model-overview-title">模型配置</h3>
+              <div id="admin-model-overview" class="admin-account-overview"></div>
+            </section>
+            <details class="admin-raw-data-wrap">
+              <summary>查看服务器原始数据</summary>
+              <pre id="admin-raw-data" class="admin-user-data"></pre>
+            </details>
+          </div>
         </section>
       </div>
     </dialog>
@@ -677,6 +712,6 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260909-update-compat-v1" defer></script>
+    <script src="./app.js?release=20260910-admin-data-v1" defer></script>
   </body>
 </html>

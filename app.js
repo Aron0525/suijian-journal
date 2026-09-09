@@ -472,6 +472,8 @@ const elements = {
   backupExportZip: document.querySelector('#backup-export-zip'),
   cloudSyncButton: document.querySelector('#cloud-sync-button'),
   cloudAccountButton: document.querySelector('#cloud-account-button'),
+  adminShortcutButton: document.querySelector('#admin-shortcut-button'),
+  adminShortcutDivider: document.querySelector('#admin-shortcut-divider'),
   accountDialog: document.querySelector('#account-dialog'),
   closeAccountDialog: document.querySelector('#close-account-dialog'),
   accountDialogCopy: document.querySelector('#account-dialog-copy'),
@@ -524,7 +526,14 @@ const elements = {
   adminSendPasswordReset: document.querySelector('#admin-send-password-reset'),
   adminToggleUserSuspension: document.querySelector('#admin-toggle-user-suspension'),
   adminUserSummary: document.querySelector('#admin-user-summary'),
-  adminUserData: document.querySelector('#admin-user-data'),
+  adminAccountOverview: document.querySelector('#admin-account-overview'),
+  adminEntryList: document.querySelector('#admin-entry-list'),
+  adminDraftList: document.querySelector('#admin-draft-list'),
+  adminSummaryList: document.querySelector('#admin-summary-list'),
+  adminTaskList: document.querySelector('#admin-task-list'),
+  adminBackupList: document.querySelector('#admin-backup-list'),
+  adminModelOverview: document.querySelector('#admin-model-overview'),
+  adminRawData: document.querySelector('#admin-raw-data'),
   periodSummaryDialog: document.querySelector('#period-summary-dialog'),
   closePeriodSummaryDialog: document.querySelector('#close-period-summary-dialog'),
   searchDialog: document.querySelector('#search-dialog'),
@@ -4160,6 +4169,8 @@ function renderCloudAccountDialog() {
   elements.cloudAccountButton.textContent = session ? '账号' : '登录';
   elements.cloudAccountButton.setAttribute('aria-label', session ? '打开账号窗口' : '打开登录或注册窗口');
   elements.adminEntryCard.hidden = !adminCandidate;
+  elements.adminShortcutButton.hidden = !adminCandidate;
+  elements.adminShortcutDivider.hidden = !adminCandidate;
   if (adminCandidate) {
     elements.adminEntryStatus.textContent = state.admin.checking
       ? '正在核验权限'
@@ -4181,7 +4192,145 @@ function adminDateLabel(value) {
 function adminUserDataSummary(data) {
   if (!data || typeof data !== 'object') return '正在读取用户保存的数据…';
   const count = (key) => Array.isArray(data[key]) ? data[key].length : 0;
-  return `日记 ${count('entries')} 条 · 当天摘要 ${count('daily_summaries')} 条 · 阶段总结 ${count('period_summaries')} 条 · 待办 ${count('tasks')} 条 · 云端备份 ${count('backups')} 条 · 附件目录 ${count('attachment_folders')} 个`;
+  return `日记 ${count('entries')} 条 · 草稿 ${count('drafts')} 条 · 当天摘要 ${count('daily_summaries')} 条 · 阶段总结 ${count('period_summaries')} 条 · 待办 ${count('tasks')} 条 · 云端备份 ${count('backups')} 条 · 附件 ${count('attachments')} 个`;
+}
+
+function adminAppendEmpty(container, copy = '服务器中暂无内容。') {
+  if (!container) return;
+  const empty = document.createElement('p');
+  empty.className = 'admin-record-empty';
+  empty.textContent = copy;
+  container.append(empty);
+}
+
+function adminAppendField(container, label, value) {
+  if (!container) return;
+  const field = document.createElement('div');
+  field.className = 'admin-account-field';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const content = document.createElement('strong');
+  content.textContent = value === undefined || value === null || value === '' ? '暂无' : String(value);
+  field.append(name, content);
+  container.append(field);
+}
+
+function adminAppendRecord(container, { title, date = '', content = '', meta = '' }) {
+  if (!container) return;
+  const article = document.createElement('article');
+  article.className = 'admin-journal-record';
+  const header = document.createElement('header');
+  const heading = document.createElement('strong');
+  heading.textContent = title || '未命名记录';
+  header.append(heading);
+  if (date) {
+    const time = document.createElement('time');
+    time.textContent = date;
+    header.append(time);
+  }
+  article.append(header);
+  if (meta) {
+    const metadata = document.createElement('div');
+    metadata.className = 'admin-record-meta';
+    metadata.textContent = meta;
+    article.append(metadata);
+  }
+  if (content) {
+    const body = document.createElement('p');
+    body.textContent = content;
+    article.append(body);
+  }
+  container.append(article);
+}
+
+function adminReadablePayload(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+function renderAdminDataSections(data, user) {
+  const containers = [
+    elements.adminAccountOverview, elements.adminEntryList, elements.adminDraftList,
+    elements.adminSummaryList, elements.adminTaskList, elements.adminBackupList,
+    elements.adminModelOverview,
+  ];
+  containers.forEach((container) => container?.replaceChildren());
+  if (elements.adminRawData) elements.adminRawData.textContent = '';
+  if (!data || typeof data !== 'object') return;
+
+  const credential = user?.credential || {};
+  adminAppendField(elements.adminAccountOverview, '邮箱', user?.email);
+  adminAppendField(elements.adminAccountOverview, '用户 ID', user?.id);
+  adminAppendField(elements.adminAccountOverview, '注册时间', adminDateLabel(user?.created_at));
+  adminAppendField(elements.adminAccountOverview, '最近登录', adminDateLabel(user?.last_sign_in_at));
+  adminAppendField(elements.adminAccountOverview, '邮箱验证', user?.email_confirmed_at ? adminDateLabel(user.email_confirmed_at) : '未验证');
+  adminAppendField(elements.adminAccountOverview, '账号状态', user?.banned_until ? '已停用' : '正常');
+  adminAppendField(elements.adminAccountOverview, '登录方式', Array.isArray(credential.providers) && credential.providers.length ? credential.providers.join('、') : '邮箱密码');
+  adminAppendField(elements.adminAccountOverview, '登录密码', '不可读取（认证服务器仅保存不可逆哈希）');
+
+  const warnings = Array.isArray(data.data_warnings) ? data.data_warnings : [];
+  warnings.forEach((warning) => {
+    const note = document.createElement('p');
+    note.className = 'admin-data-warning';
+    note.textContent = `部分数据读取提示：${warning}`;
+    elements.adminAccountOverview?.append(note);
+  });
+
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  entries.forEach((entry) => adminAppendRecord(elements.adminEntryList, {
+    title: entry.title || `${entry.entry_date || '未知日期'}的日记`,
+    date: entry.entry_date || adminDateLabel(entry.created_at),
+    meta: `更新：${adminDateLabel(entry.updated_at)}${entry.deleted_at ? ' · 已删除' : ''}`,
+    content: [entry.content, entry.original_content ? `\n原始内容：\n${entry.original_content}` : '', entry.attachments?.length ? `\n附件记录：\n${adminReadablePayload(entry.attachments)}` : ''].filter(Boolean).join('\n'),
+  }));
+  if (!entries.length) adminAppendEmpty(elements.adminEntryList);
+
+  const drafts = Array.isArray(data.drafts) ? data.drafts : [];
+  drafts.forEach((draft) => adminAppendRecord(elements.adminDraftList, {
+    title: `${draft.draft_date || '未知日期'}的草稿`,
+    date: adminDateLabel(draft.updated_at),
+    meta: draft.deleted_at ? '已删除草稿' : '服务器草稿',
+    content: adminReadablePayload(draft.payload),
+  }));
+  if (!drafts.length) adminAppendEmpty(elements.adminDraftList);
+
+  const daily = Array.isArray(data.daily_summaries) ? data.daily_summaries : [];
+  const periods = Array.isArray(data.period_summaries) ? data.period_summaries : [];
+  daily.forEach((summary) => adminAppendRecord(elements.adminSummaryList, {
+    title: `${summary.entry_date || '未知日期'} · 当天摘要`, date: adminDateLabel(summary.updated_at), content: summary.content,
+  }));
+  periods.forEach((summary) => adminAppendRecord(elements.adminSummaryList, {
+    title: `${summary.start_date || '未知'} 至 ${summary.end_date || '未知'} · 阶段总结`, date: adminDateLabel(summary.updated_at), content: summary.content,
+  }));
+  if (!daily.length && !periods.length) adminAppendEmpty(elements.adminSummaryList);
+
+  const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+  tasks.forEach((task) => adminAppendRecord(elements.adminTaskList, {
+    title: task.completed ? '已完成待办' : '未完成待办', date: adminDateLabel(task.updated_at), content: task.content,
+  }));
+  if (!tasks.length) adminAppendEmpty(elements.adminTaskList);
+
+  const backups = Array.isArray(data.backups) ? data.backups : [];
+  const attachments = Array.isArray(data.attachments) ? data.attachments : [];
+  backups.forEach((backup) => adminAppendRecord(elements.adminBackupList, {
+    title: `${backup.backup_date || '未知日期'} · 云端备份`, date: adminDateLabel(backup.created_at), content: adminReadablePayload(backup.payload),
+  }));
+  attachments.forEach((attachment) => adminAppendRecord(elements.adminBackupList, {
+    title: attachment.name || attachment.path || '附件', date: adminDateLabel(attachment.updated_at || attachment.created_at),
+    meta: [attachment.metadata?.mimetype, attachment.metadata?.size ? `${attachment.metadata.size} 字节` : ''].filter(Boolean).join(' · '),
+    content: attachment.path || '',
+  }));
+  if (!backups.length && !attachments.length) adminAppendEmpty(elements.adminBackupList);
+
+  const aiSettings = data.ai_settings;
+  if (aiSettings?.config) {
+    Object.entries(aiSettings.config).forEach(([key, value]) => adminAppendField(elements.adminModelOverview, key, adminReadablePayload(value)));
+    adminAppendField(elements.adminModelOverview, 'API Key', aiSettings.api_key_configured ? '已配置（密钥内容已隐藏）' : '未配置');
+  } else {
+    adminAppendEmpty(elements.adminModelOverview, '服务器中没有模型配置。');
+  }
+  if (elements.adminRawData) elements.adminRawData.textContent = JSON.stringify({ user, data }, null, 2);
 }
 
 function clearAdminUserDetail({ renderPanel = true } = {}) {
@@ -4268,9 +4417,7 @@ function renderAdminPanel() {
   elements.adminUserSummary.textContent = admin.detailLoading
     ? '正在读取此用户的日记、汇总、待办、附件目录和备份…'
     : adminUserDataSummary(admin.selectedData);
-  elements.adminUserData.textContent = admin.detailLoading || !admin.selectedData
-    ? ''
-    : JSON.stringify(admin.selectedData, null, 2);
+  renderAdminDataSections(admin.detailLoading ? null : admin.selectedData, user);
   const suspended = Boolean(user.banned_until);
   elements.adminToggleUserSuspension.textContent = suspended ? '恢复账号' : '停用账号';
   elements.adminToggleUserSuspension.classList.toggle('danger-button', !suspended);
@@ -4392,6 +4539,8 @@ async function openAdminDialog() {
     showToast(`管理员权限核验失败：${state.admin.permissionError || '请稍后重试'}`);
     return;
   }
+  closeWorkspaceDialog(elements.accountDialog);
+  closeWorkspaceDialog(elements.syncDialog);
   renderAdminPanel();
   openWorkspaceDialog(elements.adminDialog, elements.adminRefreshUsers);
   await loadAdminUsers();
@@ -5964,6 +6113,7 @@ function bindEvents() {
   elements.authGateLogin.addEventListener('click', openCloudAccountDialog);
   elements.closeAccountDialog.addEventListener('click', closeCloudAccountDialog);
   elements.adminPanelButton?.addEventListener('click', () => void openAdminDialog());
+  elements.adminShortcutButton?.addEventListener('click', () => void openAdminDialog());
   elements.closeAdminDialog?.addEventListener('click', closeAdminDialog);
   elements.adminRefreshUsers?.addEventListener('click', () => void loadAdminUsers());
   elements.closeAdminUserDetail?.addEventListener('click', () => clearAdminUserDetail());
@@ -6207,6 +6357,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-update-compat-v1'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260910-admin-data-v1'));
   }
 }
