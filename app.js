@@ -49,6 +49,11 @@ const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
 const MOBILE_OTA_MANIFEST_URL = 'https://933647.xyz/app-update.json';
 const MOBILE_OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://933647.xyz/native-app-update.json';
+// Keep accepting release assets through the original GitHub Pages URL.
+// Android shells installed before the custom-domain migration trust that URL;
+// GitHub redirects it to the current domain without changing the asset path.
+const LEGACY_UPDATE_ORIGIN = 'https://aron0525.github.io';
+const LEGACY_UPDATE_BASE_PATH = '/suijian-journal';
 const REMINDER_SETTINGS_KEY = 'suijian-writing-reminder-v1';
 const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7], skipDate: '', snoozedUntil: '' });
 let runtimeAiApiKey = '';
@@ -5737,15 +5742,21 @@ async function installedNativeAppInfo() {
   }
 }
 
+function isTrustedReleaseAsset(url, expectedPath, manifestUrl) {
+  const base = new URL(manifestUrl);
+  return (url.origin === base.origin && url.pathname === expectedPath)
+    || (url.origin === LEGACY_UPDATE_ORIGIN
+      && url.pathname === `${LEGACY_UPDATE_BASE_PATH}${expectedPath}`);
+}
+
 function isTrustedNativeInstallerUpdate(manifest) {
   if (!manifest || !Number.isSafeInteger(manifest.versionCode) || manifest.versionCode < 1
     || typeof manifest.versionName !== 'string' || !/^\d+\.\d+\.\d+$/.test(manifest.versionName)
     || typeof manifest.apkUrl !== 'string' || !/^[a-f0-9]{64}$/.test(manifest.checksum || '')) return false;
   try {
     const url = new URL(manifest.apkUrl);
-    const base = new URL(NATIVE_APP_UPDATE_MANIFEST_URL);
-    return url.origin === base.origin
-      && url.pathname === `/downloads/suijian-android-v${manifest.versionName}.apk`;
+    const expectedPath = `/downloads/suijian-android-v${manifest.versionName}.apk`;
+    return isTrustedReleaseAsset(url, expectedPath, NATIVE_APP_UPDATE_MANIFEST_URL);
   } catch {
     return false;
   }
@@ -5846,9 +5857,8 @@ function isTrustedMobileUpdate(manifest) {
   if (!/^mobile-ota-[a-f0-9]{16}$/.test(manifest.version) || !/^[a-f0-9]{64}$/.test(manifest.checksum)) return false;
   try {
     const url = new URL(manifest.url);
-    const base = new URL(MOBILE_OTA_MANIFEST_URL);
-    return url.origin === base.origin
-      && url.pathname === `/updates/suijian-web-${manifest.version}.zip`;
+    const expectedPath = `/updates/suijian-web-${manifest.version}.zip`;
+    return isTrustedReleaseAsset(url, expectedPath, MOBILE_OTA_MANIFEST_URL);
   } catch {
     return false;
   }
@@ -6197,6 +6207,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-custom-domain-v1'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-update-compat-v1'));
   }
 }

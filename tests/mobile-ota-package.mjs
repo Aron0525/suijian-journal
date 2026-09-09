@@ -12,7 +12,7 @@ await runFile('node', ['scripts/build-mobile-web.mjs'], { cwd: projectRoot });
 
 const manifest = JSON.parse(await readFile(new URL('../dist-mobile/app-update.json', import.meta.url), 'utf8'));
 assert.match(manifest.version, /^mobile-ota-[a-f0-9]{16}$/);
-assert.match(manifest.url, new RegExp(`/updates/suijian-web-${manifest.version}\\.zip$`));
+assert.equal(manifest.url, `https://aron0525.github.io/suijian-journal/updates/suijian-web-${manifest.version}.zip`);
 assert.match(manifest.checksum, /^[a-f0-9]{64}$/);
 
 const zipName = new URL(manifest.url).pathname.split('/').at(-1);

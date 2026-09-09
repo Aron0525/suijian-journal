@@ -8,7 +8,9 @@ const runFile = promisify(execFile);
 const output = new URL('../dist-mobile/', import.meta.url);
 const outputPath = fileURLToPath(output);
 const files = ['index.html', 'index.htm', 'styles.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'icon.svg'];
-const pagesBaseUrl = 'https://933647.xyz';
+// Release assets use the legacy Pages URL for one compatibility cycle. Old
+// Android shells trust this origin, while GitHub redirects it to 933647.xyz.
+const releaseAssetBaseUrl = 'https://aron0525.github.io/suijian-journal';
 
 async function listBundleFiles(directory, prefix = '') {
   const names = await readdir(directory, { withFileTypes: true });
@@ -47,7 +49,7 @@ await runFile('zip', ['-qr', zipPath, ...files, 'icons', '.nojekyll'], { cwd: ou
 const checksum = createHash('sha256').update(await readFile(zipPath)).digest('hex');
 const manifest = {
   version: release,
-  url: `${pagesBaseUrl}/updates/${zipName}`,
+  url: `${releaseAssetBaseUrl}/updates/${zipName}`,
   checksum,
 };
 await writeFile(new URL('app-update.json', output), `${JSON.stringify(manifest, null, 2)}\n`);

@@ -313,9 +313,14 @@ create index if not exists admin_audit_events_target_created_idx
 alter table public.journal_admins enable row level security;
 alter table public.admin_audit_events enable row level security;
 revoke all on table public.journal_admins, public.admin_audit_events from anon, authenticated;
+grant select, insert, update, delete on table public.journal_admins, public.admin_audit_events to service_role;
 
 -- Initial allow-list. If the account has not yet been created, this statement
 -- safely inserts no row; re-run this schema after the account exists.
 insert into public.journal_admins (user_id)
 select id from auth.users where lower(email) = 'rili66@outlook.com'
 on conflict (user_id) do nothing;
+
+-- New tables and grants must be visible to the Edge Function's PostgREST
+-- client immediately after this schema is applied.
+notify pgrst, 'reload schema';

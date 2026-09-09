@@ -23,6 +23,8 @@ assert.equal(indexHtm, index, 'index.htm is the installed PWA entry point and mu
 assert.doesNotMatch(app, /const SESSION_REMEMBER_MS/);
 assert.match(app, /const AUTO_SYNC_INTERVAL_MS = 10 \* 60 \* 1000/);
 assert.match(app, /const MOBILE_OTA_MANIFEST_URL = 'https:\/\/933647\.xyz\/app-update\.json'/);
+assert.match(app, /const LEGACY_UPDATE_ORIGIN = 'https:\/\/aron0525\.github\.io'/);
+assert.match(app, /const LEGACY_UPDATE_BASE_PATH = '\/suijian-journal'/);
 assert.match(app, /function nativeUpdater\(\)/);
 assert.match(app, /async function checkNativeAppUpdate\(\{ quiet = true, applyImmediately = false \} = \{\}\)/);
 assert.match(app, /updater\.download\(\{ url: manifest\.url, version: manifest\.version, checksum: manifest\.checksum \}\)/);
@@ -36,6 +38,9 @@ assert.match(app, /function checkNativeInstallerUpdate\(\{ quiet = true \} = \{\
 assert.match(app, /function openNativeInstallerDownload\(\)/);
 assert.match(app, /function checkMobileUpdatesManually\(\)/);
 assert.match(app, /function isTrustedNativeInstallerUpdate\(manifest\)/);
+assert.match(app, /function isTrustedReleaseAsset\(url, expectedPath, manifestUrl\)/);
+assert.match(app, /url\.origin === LEGACY_UPDATE_ORIGIN/);
+assert.match(app, /url\.pathname === `\$\{LEGACY_UPDATE_BASE_PATH\}\$\{expectedPath\}`/);
 assert.match(app, /native-app-update\.json/);
 
 assert.match(app, /localStorage\.setItem\(CLOUD_SESSION_KEY/);
@@ -70,8 +75,8 @@ assert.match(app, /persistDataChange/);
 assert.doesNotMatch(serviceWorker, /caches\.match\(event\.request\)/);
 assert.match(serviceWorker, /if \(url\.origin !== self\.location\.origin\) return/);
 assert.match(serviceWorker, /cache: 'no-store'/);
-assert.match(serviceWorker, /suijian-pwa-v48/);
-assert.match(index, /app\.js\?release=20260909-custom-domain-v1/);
+assert.match(serviceWorker, /suijian-pwa-v49/);
+assert.match(index, /app\.js\?release=20260909-update-compat-v1/);
 assert.match(index, /id="account-dialog"/);
 assert.match(index, /id="mobile-update-panel"/);
 assert.match(index, /id="check-mobile-update"/);
@@ -80,7 +85,7 @@ assert.match(index, /id="download-mobile-update"/);
 assert.match(index, /id="sync-dialog"/);
 assert.match(index, /id="sync-open-account"/);
 assert.doesNotMatch(index, /id="supabase-url"/);
-assert.match(app, /sw\.js\?release=20260909-custom-domain-v1/);
+assert.match(app, /sw\.js\?release=20260909-update-compat-v1/);
 assert.match(index, /connect-src 'self' https:\/\/\*\.supabase\.co/);
 assert.match(edgeFunction, /parsed\.protocol !== 'https:'/);
 assert.match(edgeFunction, /allowedAiHosts\(\)\.has/);

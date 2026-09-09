@@ -55,6 +55,8 @@ assert.match(config, /\[functions\.admin-panel\]\s*\nverify_jwt = true/);
 assert.match(schema, /create table if not exists public\.journal_admins/);
 assert.match(schema, /create table if not exists public\.admin_audit_events/);
 assert.match(schema, /revoke all on table public\.journal_admins, public\.admin_audit_events from anon, authenticated/);
+assert.match(schema, /grant select, insert, update, delete on table public\.journal_admins, public\.admin_audit_events to service_role/);
+assert.match(schema, /notify pgrst, 'reload schema'/);
 assert.match(schema, /lower\(email\) = 'rili66@outlook\.com'/);
 assert.match(edge, /const ADMIN_EMAIL = 'rili66@outlook\.com';/);
 assert.match(edge, /SUPABASE_SERVICE_ROLE_KEY/);
