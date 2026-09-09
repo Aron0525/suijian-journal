@@ -46,9 +46,9 @@ python3 server.py
 
 进入 **Authentication → URL Configuration**：
 
-- **Site URL** 填：`https://aron0525.github.io/suijian-journal/`
+- **Site URL** 填：`https://933647.xyz/`
 - **Redirect URLs** 依次增加：
-  - `https://aron0525.github.io/suijian-journal/**`
+  - `https://933647.xyz/**`
   - `http://127.0.0.1:4173/**`
   - `http://localhost:4173/**`
 
@@ -69,7 +69,7 @@ supabase secrets set AI_ALLOWED_HOSTS=api.deepseek.com,api.openai.com
 
 模型 API Key 不需要、也不应写入 Supabase Secret。用户在岁笺的“模型配置”窗口临时输入 Key，线上函数只转发本次请求。
 
-## C. 配置 GitHub Pages
+## C. 配置 GitHub Pages 与自定义域名
 
 仓库已包含 `.github/workflows/deploy-pages.yml`。在 GitHub 仓库中：
 
@@ -77,9 +77,9 @@ supabase secrets set AI_ALLOWED_HOSTS=api.deepseek.com,api.openai.com
 2. 将 Source 设为 **GitHub Actions**；
 3. 向 `main` 推送一次提交；
 4. 在 **Actions** 查看 `Deploy PWA to GitHub Pages` 是否成功；
-5. 打开 `https://aron0525.github.io/suijian-journal/` 验证网页。
+5. 在 Pages 设置中将 Custom domain 设为 `933647.xyz`，并打开 `https://933647.xyz/` 验证网页。
 
-这个工作流会执行 `npm test`，随后构建 PWA、网页更新包与 Android APK，并把 `dist-mobile/` 发布到 Pages。
+这个工作流会执行 `npm test`，随后构建 PWA、网页更新包与 Android APK，并把 `dist-mobile/` 发布到自定义域名。GitHub 只负责代码和静态发布；用户日记、附件、账号及备份均保存在 Supabase。
 
 ## D. 配置 Android 签名和 APK
 

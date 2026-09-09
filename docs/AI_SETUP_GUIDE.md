@@ -18,7 +18,7 @@
 | 项目 | 状态 | AI 的下一步 |
 |---|---|---|
 | GitHub 仓库 | `Aron0525/suijian-journal`，公开仓库 | 直接向 `main` 推送；不要新建同名仓库。 |
-| GitHub Pages | 已启用，发布地址为 `https://aron0525.github.io/suijian-journal/` | 推送后检查 Actions 的 Pages 工作流。 |
+| 自定义域名网页 | `https://933647.xyz/`，由 GitHub Actions 发布静态资源 | 推送后检查 Actions 的 Pages 工作流及自定义域名状态。 |
 | Android 签名 Secrets | 4 个必需名称已存在 | 不读取、不打印、不替换其值。 |
 | Supabase AI 代理 | `ai-proxy` 对 `OPTIONS` 返回 204 | 继续保持 JWT 验证；按需设置允许的模型域名。 |
 | `journal_tasks` | 远程 REST 读取返回 404 | 首要动作：在 Supabase SQL Editor 执行 `supabase/schema.sql`。 |
@@ -63,17 +63,17 @@ supabase secrets set AI_ALLOWED_HOSTS=api.deepseek.com,api.openai.com
 
 在 **Authentication → URL Configuration** 填写：
 
-- Site URL：`https://aron0525.github.io/suijian-journal/`
+- Site URL：`https://933647.xyz/`
 - Redirect URLs：
-  - `https://aron0525.github.io/suijian-journal/**`
+  - `https://933647.xyz/**`
   - `http://127.0.0.1:4173/**`
   - `http://localhost:4173/**`
 
 保持邮箱确认开启。注册用户点击邮件链接后，会回到岁笺并能继续登录。
 
-### 5. GitHub Pages 和 Android 构建
+### 5. 自定义域名网页和 Android 构建
 
-工作流在 `.github/workflows/deploy-pages.yml`。它会运行测试、构建 PWA、构建已签名 APK，并发布 `dist-mobile/`。
+工作流在 `.github/workflows/deploy-pages.yml`。它会运行测试、构建 PWA、构建已签名 APK，并将 `dist-mobile/` 发布到 `https://933647.xyz/`。GitHub 不存放用户日记；账号数据、日记、附件与备份由 Supabase 保存。
 
 Android 构建使用以下 GitHub Actions Secrets：
 

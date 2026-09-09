@@ -1,10 +1,9 @@
 import { createClient, type SupabaseClient, type User } from 'npm:@supabase/supabase-js@2';
 
-const APP_ORIGIN = 'https://aron0525.github.io';
-const APP_PATH = '/suijian-journal';
-const APP_URL = `${APP_ORIGIN}${APP_PATH}/`;
+const APP_ORIGIN = 'https://933647.xyz';
+const APP_URL = `${APP_ORIGIN}/`;
 const ADMIN_EMAIL = 'rili66@outlook.com';
-const ALLOWED_ORIGINS = new Set([APP_ORIGIN, 'capacitor://localhost', 'http://localhost', 'http://127.0.0.1:4173']);
+const ALLOWED_ORIGINS = new Set([APP_ORIGIN, 'https://aron0525.github.io', 'capacitor://localhost', 'http://localhost', 'http://127.0.0.1:4173']);
 const USER_PAGE_SIZE = 100;
 const MAX_USER_PAGE = 100;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{3}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

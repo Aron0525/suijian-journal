@@ -3,7 +3,7 @@ const ACCOUNT_DRAFT_PREFIX = 'suijian-draft-account-v2:';
 const LEGACY_AI_CONFIG_KEY = 'suijian-ai-config-v1';
 const ACCOUNT_AI_CONFIG_PREFIX = 'suijian-ai-config-account-v2:';
 const AI_SETTINGS_TABLE = 'ai_settings';
-const DESKTOP_APP_URL = 'https://aron0525.github.io/suijian-journal/';
+const DESKTOP_APP_URL = 'https://933647.xyz/';
 const CLOUD_CONFIG_KEY = 'suijian-supabase-config-v1';
 const CLOUD_SESSION_KEY = 'suijian-supabase-session-v1';
 const ACCOUNT_CLOUD_ACTIVITY_PREFIX = 'suijian-cloud-activity-v2:';
@@ -46,9 +46,9 @@ const MAX_ENTRY_CONTENT_CHARS = 10000;
 const MAX_ENTRY_WORK_CONTENT_CHARS = 3000;
 const MAX_SUMMARY_CHARS = 60000;
 const AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
-const MOBILE_OTA_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/app-update.json';
+const MOBILE_OTA_MANIFEST_URL = 'https://933647.xyz/app-update.json';
 const MOBILE_OTA_CHECK_INTERVAL_MS = 10 * 60 * 1000;
-const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://aron0525.github.io/suijian-journal/native-app-update.json';
+const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://933647.xyz/native-app-update.json';
 const REMINDER_SETTINGS_KEY = 'suijian-writing-reminder-v1';
 const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7], skipDate: '', snoozedUntil: '' });
 let runtimeAiApiKey = '';
@@ -5745,7 +5745,7 @@ function isTrustedNativeInstallerUpdate(manifest) {
     const url = new URL(manifest.apkUrl);
     const base = new URL(NATIVE_APP_UPDATE_MANIFEST_URL);
     return url.origin === base.origin
-      && url.pathname === `/suijian-journal/downloads/suijian-android-v${manifest.versionName}.apk`;
+      && url.pathname === `/downloads/suijian-android-v${manifest.versionName}.apk`;
   } catch {
     return false;
   }
@@ -5848,7 +5848,7 @@ function isTrustedMobileUpdate(manifest) {
     const url = new URL(manifest.url);
     const base = new URL(MOBILE_OTA_MANIFEST_URL);
     return url.origin === base.origin
-      && url.pathname === `/suijian-journal/updates/suijian-web-${manifest.version}.zip`;
+      && url.pathname === `/updates/suijian-web-${manifest.version}.zip`;
   } catch {
     return false;
   }
@@ -6197,6 +6197,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-admin-console-v2'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-custom-domain-v1'));
   }
 }

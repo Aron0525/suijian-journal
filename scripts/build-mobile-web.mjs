@@ -8,7 +8,7 @@ const runFile = promisify(execFile);
 const output = new URL('../dist-mobile/', import.meta.url);
 const outputPath = fileURLToPath(output);
 const files = ['index.html', 'index.htm', 'styles.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'icon.svg'];
-const pagesBaseUrl = 'https://aron0525.github.io/suijian-journal';
+const pagesBaseUrl = 'https://933647.xyz';
 
 async function listBundleFiles(directory, prefix = '') {
   const names = await readdir(directory, { withFileTypes: true });
