@@ -21,6 +21,9 @@ await access(zipPath);
 const actualChecksum = createHash('sha256').update(await readFile(zipPath)).digest('hex');
 assert.equal(actualChecksum, manifest.checksum);
 
+const bundledIndex = await readFile(new URL('../dist-mobile/index.html', import.meta.url), 'utf8');
+assert.match(bundledIndex, /connect-src 'self' https:\/\/\*\.supabase\.co https:\/\/933647\.xyz https:\/\/aron0525\.github\.io/, 'the OTA bundle must permit update checks from the Capacitor WebView origin');
+
 const { stdout } = await runFile('unzip', ['-Z1', zipPath.pathname]);
 assert.match(stdout, /^index\.html$/m);
 assert.match(stdout, /^app\.js$/m);

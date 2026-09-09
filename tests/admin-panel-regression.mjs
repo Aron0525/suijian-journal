@@ -73,6 +73,7 @@ assert.match(schema, /grant select, insert, update, delete on table public\.jour
 assert.match(schema, /notify pgrst, 'reload schema'/);
 assert.match(schema, /lower\(email\) = 'rili66@outlook\.com'/);
 assert.match(edge, /const ADMIN_EMAIL = 'rili66@outlook\.com';/);
+assert.match(edge, /'https:\/\/localhost'/, 'Capacitor Android uses https://localhost and must receive a matching CORS origin');
 assert.match(edge, /SUPABASE_SERVICE_ROLE_KEY/);
 assert.match(edge, /\.from\('journal_admins'\)/);
 assert.match(edge, /\.upsert\(\{ user_id: data\.user\.id \}, \{ onConflict: 'user_id', ignoreDuplicates: true \}\)/);
