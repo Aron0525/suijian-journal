@@ -10,8 +10,8 @@ import { promisify } from 'node:util';
 const runFile = promisify(execFile);
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 const version = JSON.parse(await readFile(new URL('../mobile-version.json', import.meta.url), 'utf8'));
-assert.equal(version.versionCode, 5);
-assert.equal(version.versionName, '1.1.3');
+assert.equal(version.versionCode, 6);
+assert.equal(version.versionName, '1.1.4');
 
 const temp = await mkdtemp(join(tmpdir(), 'suijian-native-update-'));
 const apkPath = join(temp, 'app-release.apk');

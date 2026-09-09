@@ -29,11 +29,13 @@ function extractFunction(source, name) {
 }
 
 assert.match(app, /function reconcileCloudDeltas\(/, 'each sync needs a complete account reconciliation step');
+assert.match(app, /async function syncCoreJournalEntries\(/, 'journal entries need a dedicated required sync path');
 assert.match(app, /if \(local && !incomingWins\(local, remote\)\) return;/, 'a remote record missing from a device cache must be merged into that device');
 assert.match(app, /function reconcileCloudDraftDeltas\(/, 'saved drafts need reconciliation even when an old client left no dirty marker');
-assert.match(app, /const firstCloudPull = await pullCloudData\(\{ merge: false \}\);[\s\S]*prepareLocalEntryConflictsForFullSync\(firstCloudPull\.entries\);[\s\S]*reconcileCloudDeltas\(firstCloudPull\);/, 'the first server inventory must not overwrite local entries before reconciliation');
-assert.match(app, /reconcileCloudDraftDeltas\(firstCloudDraftRecords\);/, 'manual and scheduled sync must reconcile local drafts after the first server pull');
-assert.match(app, /const finalCloudPull = await pullCloudData\(\);[\s\S]*await pullCloudDrafts\(finalCloudPull\.draftFallbackEntries\);/, 'sync must fetch the final server state after incremental upload');
+assert.match(app, /const firstPull = await pullCloudEntries\(\{ merge: false \}\);[\s\S]*prepareLocalEntryConflictsForFullSync\(firstPull\.entries\);[\s\S]*reconcileCloudEntryDeltas\(firstPull\.entries\);/, 'the first server inventory must not overwrite local entries before reconciliation');
+assert.match(app, /const firstRecords = await pullCloudDrafts\(fallbackEntries\);[\s\S]*reconcileCloudDraftDeltas\(firstRecords\);/, 'manual and scheduled sync must reconcile local drafts after the first server pull');
+assert.match(app, /await pushCloudEntries\(\);[\s\S]*const finalPull = await pullCloudEntries\(\);/, 'entry sync must fetch the final server state immediately after incremental upload');
+assert.match(app, /const core = await syncCoreJournalEntries\(\{ quiet \}\);[\s\S]*collectCloudSyncWarning\(warnings, '模型配置'/, 'the required journal stream must finish before optional model configuration sync');
 
 const context = vm.createContext({ Date });
 vm.runInContext([
@@ -67,6 +69,7 @@ vm.runInContext([
   extractFunction(app, 'cloudUpdatedAt'),
   extractFunction(app, 'ensureCloudMetadata'),
   extractFunction(app, 'shouldQueueCloudRecord'),
+  extractFunction(app, 'reconcileCloudEntryDeltas'),
   extractFunction(app, 'reconcileCloudDeltas'),
 ].join('\n\n'), reconciliationContext);
 

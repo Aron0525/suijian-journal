@@ -313,7 +313,7 @@ const state = {
   busy: false,
   promptEditorType: 'organize',
   archiveJumpDate: '',
-  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, draftsSupported: null, draftsStorageMode: '', backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', passwordRecovery: false },
+  cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, draftsSupported: null, draftsStorageMode: '', backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', lastWarning: '', passwordRecovery: false },
   admin: emptyAdminState(),
   nativeUpdate: { checking: false, timer: 0, readyPromise: null },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
@@ -748,6 +748,7 @@ function activateJournalAccount(userId) {
   state.cloud.activity = loadCloudActivity(accountId);
   if (restoredLegacyCache) recordCloudActivity('已恢复此账号的旧版本本机日记，正在与云端核对', 'info');
   state.cloud.lastError = '';
+  state.cloud.lastWarning = '';
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
   state.cloud.draftsSupported = null;
@@ -770,6 +771,7 @@ function clearJournalAccount() {
   state.data = emptyJournalData();
   state.cloud.activity = [];
   state.cloud.lastError = '';
+  state.cloud.lastWarning = '';
   state.cloud.attachmentsSupported = null;
   state.cloud.tasksSupported = null;
   state.cloud.draftsSupported = null;
@@ -4112,6 +4114,10 @@ function renderSyncStatus() {
     elements.syncStatus.textContent = '云同步失败，等待重试';
     return;
   }
+  if (state.cloud.lastWarning) {
+    elements.syncStatus.textContent = '日记已同步，附加内容待重试';
+    return;
+  }
   if (state.cloud.draftsSupported === false && state.cloud.draftsStorageMode !== 'entries-fallback' && hasCloudDraftChanges()) {
     elements.syncStatus.textContent = '草稿等待云端升级';
     return;
@@ -4413,9 +4419,11 @@ function renderCloudSyncDialog() {
   elements.syncAccountMessage.textContent = session
     ? (state.cloud.lastError
       ? `上次同步失败：${state.cloud.lastError}`
+      : (state.cloud.lastWarning
+      ? `日记已同步；${state.cloud.lastWarning}`
       : (accountId && accountId !== session.user.id
       ? '检测到本机曾使用其他账号。立即同步时会先让你确认是否合并。'
-      : (hasCloudChanges() ? '本机有新内容等待上传。' : (`登录、返回前台和每 10 分钟都会自动同步。${compatibilityNotice}`))))
+      : (hasCloudChanges() ? '本机有新内容等待上传。' : (`登录、返回前台和每 10 分钟都会自动同步。${compatibilityNotice}`)))))
     : '登录后，日记、当天摘要与跨日汇总会保存到你的云端账号。';
   elements.syncDialogCopy.textContent = session
     ? '这里仅处理跨设备同步，不修改你的日记内容。'
@@ -4992,20 +5000,25 @@ function prepareLocalEntryConflictsForFullSync(remoteEntries = []) {
   return preserved.length;
 }
 
+function reconcileCloudEntryDeltas(remoteEntries = []) {
+  const now = new Date().toISOString();
+  const remoteById = new Map((Array.isArray(remoteEntries) ? remoteEntries : []).map((record) => [record.id, record]));
+  let queued = 0;
+  state.data.entries.forEach((entry) => {
+    ensureCloudMetadata(entry, now);
+    if (!shouldQueueCloudRecord(entry, remoteById.get(entry.id))) return;
+    markCloudDirty('entries', entry.id);
+    queued += 1;
+  });
+  return queued;
+}
+
 function reconcileCloudDeltas(remoteData = {}) {
   const now = new Date().toISOString();
-  const remoteEntries = new Map((Array.isArray(remoteData.entries) ? remoteData.entries : []).map((record) => [record.id, record]));
   const remoteDailySummaries = new Map((Array.isArray(remoteData.dailySummaries) ? remoteData.dailySummaries : []).map((record) => [record.entry_date, record]));
   const remotePeriodSummaries = new Map((Array.isArray(remoteData.periodSummaries) ? remoteData.periodSummaries : []).map((record) => [record.id, record]));
   const remoteTasks = new Map((Array.isArray(remoteData.tasks) ? remoteData.tasks : []).map((record) => [record.id, record]));
-  const queued = { entries: 0, dailySummaries: 0, periodSummaries: 0, tasks: 0 };
-
-  state.data.entries.forEach((entry) => {
-    ensureCloudMetadata(entry, now);
-    if (!shouldQueueCloudRecord(entry, remoteEntries.get(entry.id))) return;
-    markCloudDirty('entries', entry.id);
-    queued.entries += 1;
-  });
+  const queued = { entries: reconcileCloudEntryDeltas(remoteData.entries), dailySummaries: 0, periodSummaries: 0, tasks: 0 };
   Object.keys(state.data.summaries).forEach((date) => {
     const summary = summaryForDate(date);
     if (!summary) return;
@@ -5029,40 +5042,19 @@ function reconcileCloudDeltas(remoteData = {}) {
   return queued;
 }
 
-async function pullCloudData({ merge = true } = {}) {
+async function pullCloudEntries({ merge = true } = {}) {
   const entryColumns = 'id,entry_date,title,content,original_content,attachments,created_at,updated_at,deleted_at';
   const legacyEntryColumns = 'id,entry_date,title,content,original_content,created_at,updated_at,deleted_at';
-  const summaryColumns = 'id,entry_date,content,model,created_at,updated_at,deleted_at';
-  const periodColumns = 'id,start_date,end_date,entry_ids,content,model,created_at,updated_at,deleted_at';
-  const requestSupportingRecords = () => Promise.all([
-    cloudRequest(`/rest/v1/daily_summaries?select=${encodeURIComponent(summaryColumns)}&order=updated_at.desc`),
-    cloudRequest(`/rest/v1/period_summaries?select=${encodeURIComponent(periodColumns)}&order=updated_at.desc`),
-  ]);
   let entries;
-  let dailySummaries;
-  let periodSummaries;
   try {
-    [entries, [dailySummaries, periodSummaries]] = await Promise.all([
-      cloudRequest(`/rest/v1/journal_entries?select=${encodeURIComponent(entryColumns)}&order=updated_at.desc`),
-      requestSupportingRecords(),
-    ]);
+    entries = await cloudRequest(`/rest/v1/journal_entries?select=${encodeURIComponent(entryColumns)}&order=updated_at.desc`);
     state.cloud.attachmentsSupported = true;
   } catch (error) {
     if (!isMissingCloudAttachmentsColumn(error)) throw error;
     const firstCompatibilitySync = state.cloud.attachmentsSupported !== false;
     state.cloud.attachmentsSupported = false;
-    [entries, [dailySummaries, periodSummaries]] = await Promise.all([
-      cloudRequest(`/rest/v1/journal_entries?select=${encodeURIComponent(legacyEntryColumns)}&order=updated_at.desc`),
-      requestSupportingRecords(),
-    ]);
+    entries = await cloudRequest(`/rest/v1/journal_entries?select=${encodeURIComponent(legacyEntryColumns)}&order=updated_at.desc`);
     if (firstCompatibilitySync) recordCloudActivity('云端日记表尚未迁移附件字段，已启用文本同步兼容模式', 'info');
-  }
-  let tasks = [];
-  try {
-    tasks = await cloudRequest('/rest/v1/journal_tasks?select=id,entry_id,source_key,content,completed,created_at,updated_at,deleted_at&order=updated_at.desc');
-    state.cloud.tasksSupported = true;
-  } catch {
-    state.cloud.tasksSupported = false;
   }
   // A production project that has not yet applied the journal_drafts migration
   // still needs drafts to travel with the signed-in account. In that short
@@ -5072,13 +5064,32 @@ async function pullCloudData({ merge = true } = {}) {
     .filter((entry) => isCloudDraftFallbackEntry(entry));
   const journalEntries = (Array.isArray(entries) ? entries : [])
     .filter((entry) => !isCloudDraftFallbackEntry(entry));
-  if (merge) mergeRemoteData({ entries: journalEntries, dailySummaries, periodSummaries, tasks });
+  if (merge) mergeRemoteData({ entries: journalEntries });
+  return { entries: journalEntries, draftFallbackEntries: cloudDraftFallbackEntries };
+}
+
+async function pullCloudData({ merge = true } = {}) {
+  const summaryColumns = 'id,entry_date,content,model,created_at,updated_at,deleted_at';
+  const periodColumns = 'id,start_date,end_date,entry_ids,content,model,created_at,updated_at,deleted_at';
+  const [entryData, dailySummaries, periodSummaries] = await Promise.all([
+    pullCloudEntries({ merge: false }),
+    cloudRequest(`/rest/v1/daily_summaries?select=${encodeURIComponent(summaryColumns)}&order=updated_at.desc`),
+    cloudRequest(`/rest/v1/period_summaries?select=${encodeURIComponent(periodColumns)}&order=updated_at.desc`),
+  ]);
+  let tasks = [];
+  try {
+    tasks = await cloudRequest('/rest/v1/journal_tasks?select=id,entry_id,source_key,content,completed,created_at,updated_at,deleted_at&order=updated_at.desc');
+    state.cloud.tasksSupported = true;
+  } catch {
+    state.cloud.tasksSupported = false;
+  }
+  if (merge) mergeRemoteData({ entries: entryData.entries, dailySummaries, periodSummaries, tasks });
   return {
-    entries: journalEntries,
+    entries: entryData.entries,
     dailySummaries,
     periodSummaries,
     tasks,
-    draftFallbackEntries: cloudDraftFallbackEntries,
+    draftFallbackEntries: entryData.draftFallbackEntries,
   };
 }
 
@@ -5372,7 +5383,7 @@ function periodToCloud(summary, userId) {
   };
 }
 
-async function pushCloudChanges() {
+async function pushCloudEntries() {
   const userId = state.cloud.session.user.id;
   const entryIds = [...cloudDirty('entries')];
   const entries = entryIds.map((id) => state.data.entries.find((entry) => entry.id === id)).filter(Boolean);
@@ -5386,6 +5397,12 @@ async function pushCloudChanges() {
     mergeRemoteData({ entries: saved || [] }, { preserveDirtyEntryConflicts: false });
   }
   clearCloudDirty('entries', entryIds);
+  return entryIds.length;
+}
+
+async function pushCloudChanges() {
+  const userId = state.cloud.session.user.id;
+  await pushCloudEntries();
 
   const dailyDates = [...cloudDirty('dailySummaries')];
   const summaries = dailyDates.map((date) => ({ date, summary: summaryForDate(date) })).filter(({ summary }) => Boolean(summary));
@@ -5433,6 +5450,57 @@ async function pushCloudChanges() {
   }
 }
 
+async function syncCoreJournalEntries({ quiet = false } = {}) {
+  const firstPull = await pullCloudEntries({ merge: false });
+  const preservedConflictCount = prepareLocalEntryConflictsForFullSync(firstPull.entries);
+  const queuedCount = reconcileCloudEntryDeltas(firstPull.entries);
+  if (queuedCount || preservedConflictCount) {
+    persistData({ queue: false });
+    if (!quiet) {
+      const conflictNote = preservedConflictCount ? `；保留 ${preservedConflictCount} 条同 ID 的本机冲突副本` : '';
+      recordCloudActivity(`日记核对完成：补传 ${queuedCount} 条本机增量${conflictNote}`, 'info');
+    }
+  }
+  await pushCloudEntries();
+  const finalPull = await pullCloudEntries();
+  return { firstPull, finalPull, queuedCount, preservedConflictCount };
+}
+
+async function syncCloudDraftData(fallbackEntries = []) {
+  const firstRecords = await pullCloudDrafts(fallbackEntries);
+  const queuedCount = reconcileCloudDraftDeltas(firstRecords);
+  await pushCloudDrafts();
+  const finalEntries = state.cloud.draftsStorageMode === 'entries-fallback'
+    ? await pullCloudEntries({ merge: false })
+    : { draftFallbackEntries: [] };
+  await pullCloudDrafts(finalEntries.draftFallbackEntries);
+  if (hasCloudDraftChanges()) throw new Error('草稿仍在等待同步，请稍后重试。');
+  return queuedCount;
+}
+
+async function syncCloudSupportingData() {
+  const firstPull = await pullCloudData({ merge: false });
+  const queued = reconcileCloudDeltas(firstPull);
+  await pushCloudChanges();
+  await pullCloudData();
+  if (cloudDirty('tasks').length) {
+    throw new Error(state.cloud.tasksSupported === false
+      ? '待办云同步尚未启用：请执行最新的 Supabase 数据库结构。'
+      : '待办仍在等待同步，请稍后重试。');
+  }
+  return Object.values(queued).reduce((total, count) => total + count, 0);
+}
+
+async function collectCloudSyncWarning(warnings, label, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    warnings.push(`${label}：${message}`);
+    return null;
+  }
+}
+
 async function syncCloud({ quiet = false } = {}) {
   if (!isCloudConfigured() || !state.cloud.session) return false;
   if (state.cloud.syncing) return state.cloud.syncPromise;
@@ -5451,56 +5519,35 @@ async function syncCloud({ quiet = false } = {}) {
         markAllCloudDirty();
         persistData({ queue: false });
       }
-      // Keep an edit that has not yet reached the debounce timer from being
-      // overwritten by an incoming draft while a manual sync is running.
+      // The journal entry stream is the required sync path. Auxiliary features
+      // run afterwards and report their own warning, so a model, summary, task,
+      // draft or backup outage can never block phone/desktop journal transfer.
       saveVisibleDraftForCloudSync();
       primeCloudDraftSync();
-      const aiSettingsSynced = await syncCloudAiSettings();
-      if (!aiSettingsSynced && state.cloud.aiConfigSupported === false) {
-        throw new Error(`模型配置同步失败：${state.cloud.aiConfigError || '请检查云端数据表和网络连接'}`);
-      }
-      // Do not merge the first server read into the local cache. It is an
-      // inventory used to identify local additions and newer edits; the final
-      // pull below is the only step that applies server records locally.
-      const firstCloudPull = await pullCloudData({ merge: false });
-      const firstCloudDraftRecords = await pullCloudDrafts(firstCloudPull.draftFallbackEntries);
-      const preservedConflictCount = prepareLocalEntryConflictsForFullSync(firstCloudPull.entries);
-      const queuedRecords = reconcileCloudDeltas(firstCloudPull);
-      const queuedDrafts = reconcileCloudDraftDeltas(firstCloudDraftRecords);
-      const queuedCount = Object.values(queuedRecords).reduce((total, count) => total + count, 0) + queuedDrafts;
-      if (queuedCount || preservedConflictCount) {
-        persistData({ queue: false });
-        if (!quiet) {
-          const conflictNote = preservedConflictCount ? `；保留 ${preservedConflictCount} 条同 ID 的本机冲突副本` : '';
-          recordCloudActivity(`全量核对完成：补传 ${queuedCount} 项本机增量${conflictNote}`, 'info');
+      const core = await syncCoreJournalEntries({ quiet });
+      const warnings = [];
+      await collectCloudSyncWarning(warnings, '草稿', () => syncCloudDraftData(core.finalPull.draftFallbackEntries));
+      await collectCloudSyncWarning(warnings, '摘要和待办', () => syncCloudSupportingData());
+      await collectCloudSyncWarning(warnings, '模型配置', async () => {
+        const synced = await syncCloudAiSettings();
+        if (!synced && state.cloud.aiConfigSupported === false) {
+          throw new Error(state.cloud.aiConfigError || '请检查云端数据表和网络连接');
         }
-      }
-      await pushCloudChanges();
-      await pushCloudDrafts();
-      const finalCloudPull = await pullCloudData();
-      await pullCloudDrafts(finalCloudPull.draftFallbackEntries);
-      if (cloudDirty('tasks').length) {
-        throw new Error(state.cloud.tasksSupported === false
-          ? '待办云同步尚未启用：请执行最新的 Supabase 数据库结构。'
-          : '待办仍在等待同步，请稍后重试。');
-      }
-      if (hasCloudDraftChanges()) {
-        throw new Error(state.cloud.draftsSupported === false && state.cloud.draftsStorageMode !== 'entries-fallback'
-          ? '草稿云同步尚未启用：请先执行最新的 Supabase 数据库结构。'
-          : '草稿仍在等待同步，请稍后重试。');
-      }
+      });
       await saveDailyCloudBackup(session.user.id);
       state.cloud.lastError = '';
+      state.cloud.lastWarning = warnings.join('；');
       persistData({ queue: false });
       succeeded = true;
       if (!quiet) {
-        recordCloudActivity('手动同步完成', 'success');
-        showToast('云端内容已同步');
+        recordCloudActivity(warnings.length ? '日记同步完成；部分附加内容将在下次重试' : '手动同步完成', warnings.length ? 'info' : 'success');
+        showToast(warnings.length ? '日记已同步；部分附加内容稍后自动重试' : '云端内容已同步');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       const isNewError = state.cloud.lastError !== message;
       state.cloud.lastError = message;
+      state.cloud.lastWarning = '';
       if (!quiet || isNewError) recordCloudActivity(`同步失败：${message}`, 'error');
       if (!quiet) {
         showToast(message.includes('stale update')
@@ -6129,6 +6176,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260906-remote-entry-merge'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260909-sync-core-v2'));
   }
 }

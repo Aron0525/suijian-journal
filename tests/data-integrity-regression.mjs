@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const app = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 
 assert.match(app, /Object\.values\(meta\.dirty\)\.some\(\(values\) => values\.length > 0\)/, 'unsupported task changes must remain visible as pending cloud changes');
-assert.match(app, /throw new Error\(`待办同步失败：\$\{message\}`\)/, 'a task write failure must fail the containing sync instead of being reported as complete');
+assert.match(app, /collectCloudSyncWarning\(warnings, '摘要和待办', \(\) => syncCloudSupportingData\(\)\)/, 'a task or summary failure must remain visible without blocking journal entry transfer');
 
 function extractFunction(source, name) {
   const start = source.indexOf(`function ${name}(`);

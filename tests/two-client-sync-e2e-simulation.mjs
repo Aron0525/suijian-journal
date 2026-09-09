@@ -8,6 +8,7 @@ import { once } from 'node:events';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const root = resolve(new URL('..', import.meta.url).pathname);
+const failureMode = process.env.SYNC_E2E_FAILURE_MODE !== 'none';
 const userId = '11111111-1111-4111-8111-111111111111';
 const session = {
   accessToken: 'simulated-access-token',
@@ -24,6 +25,9 @@ const database = {
   aiSettings: new Map(),
   backups: new Map(),
   requests: [],
+  failAiSettings: failureMode,
+  failPeriodSummaries: failureMode,
+  missingDraftsTable: failureMode,
 };
 
 function json(response, status, payload) {
@@ -100,6 +104,15 @@ async function handleRest(request, response, url) {
   if (request.headers.authorization !== `Bearer ${session.accessToken}`) return json(response, 401, { message: 'invalid simulated session' });
   const table = url.pathname.split('/').at(-1);
   database.requests.push({ method: request.method, table });
+  if (table === 'ai_settings' && database.failAiSettings) {
+    return json(response, 503, { message: 'simulated optional AI settings outage' });
+  }
+  if (table === 'period_summaries' && database.failPeriodSummaries) {
+    return json(response, 503, { message: 'simulated optional period summaries outage' });
+  }
+  if (table === 'journal_drafts' && database.missingDraftsTable) {
+    return json(response, 404, { code: 'PGRST205', message: "Could not find the table 'public.journal_drafts' in the schema cache" });
+  }
   const get = (records) => json(response, 200, records.map((record) => structuredClone(record)));
 
   if (request.method === 'GET') {
@@ -215,9 +228,14 @@ try {
   assert.equal(liveEntries.length, 2, 'each simulated device should create exactly one shared journal entry');
   assert(liveEntries.every((entry) => entry.user_id === userId), 'both uploads must stay scoped to the same signed-in account');
   assert.equal(new Set(liveEntries.map((entry) => entry.id)).size, 2, 'incremental sync must not duplicate entries');
+  if (failureMode) {
+    assert(database.requests.some((item) => item.table === 'ai_settings'), 'the AI settings outage must be exercised');
+    assert(database.requests.some((item) => item.table === 'period_summaries'), 'the period summary outage must be exercised');
+    assert(database.requests.some((item) => item.table === 'journal_drafts'), 'the production-compatible missing drafts table path must be exercised');
+  }
   assert.equal(pageErrors.length, 0, `browser runtime errors: ${pageErrors.join(' | ')}`);
 
-  console.log(`Two-client sync E2E simulation passed: desktop→mobile and mobile→desktop (${liveEntries.length} shared entries)`);
+  console.log(`Two-client sync E2E simulation passed (${failureMode ? 'auxiliary outage' : 'healthy cloud'}): desktop→mobile and mobile→desktop (${liveEntries.length} shared entries)`);
 } catch (error) {
   const bodyText = async (page) => page ? (await page.locator('body').innerText().catch(() => '')).slice(0, 5000) : '';
   console.error(JSON.stringify({
