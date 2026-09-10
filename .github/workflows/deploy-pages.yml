@@ -1,0 +1,121 @@
+name: Deploy PWA to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Require Android version increment
+        env:
+          BASE_SHA: ${{ github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = '0000000000000000000000000000000000000000' ]; then
+            BASE_SHA="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+          if [ -z "$BASE_SHA" ]; then
+            echo '首个提交没有可比较的基线，跳过 Android 版本递增检查。'
+            exit 0
+          fi
+          if git diff --quiet "$BASE_SHA" HEAD -- android ios build-android-apk.sh capacitor.config.ts mobile-version.json; then
+          if node --input-type=module - "$BASE_SHA" <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { readFile } from 'node:fs/promises';
+
+          const baseSha = process.argv[2];
+          const previous = JSON.parse(execFileSync('git', ['show', `${baseSha}:package.json`], { encoding: 'utf8' }));
+          const current = JSON.parse(await readFile('package.json', 'utf8'));
+          const nativeDependencies = (manifest) => Object.fromEntries(
+            Object.entries({ ...(manifest.dependencies || {}), ...(manifest.devDependencies || {}) })
+              .filter(([name]) => name.startsWith('@capacitor/') || name === '@capgo/capacitor-updater')
+              .sort(([first], [second]) => first.localeCompare(second)),
+          );
+          if (JSON.stringify(nativeDependencies(previous)) === JSON.stringify(nativeDependencies(current))) {
+            console.log('Android 原生依赖未变化，无需递增版本。');
+            process.exit(0);
+          }
+          process.exit(1);
+          NODE
+          then
+            exit 0
+          fi
+          fi
+
+          node --input-type=module - "$BASE_SHA" <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { readFile } from 'node:fs/promises';
+
+          const baseSha = process.argv[2];
+          const previous = JSON.parse(execFileSync('git', ['show', `${baseSha}:mobile-version.json`], { encoding: 'utf8' }));
+          const current = JSON.parse(await readFile('mobile-version.json', 'utf8'));
+          const semver = /^\d+\.\d+\.\d+$/;
+
+          if (!Number.isSafeInteger(previous.versionCode) || !Number.isSafeInteger(current.versionCode)
+            || previous.versionCode < 1 || current.versionCode < 1
+            || !semver.test(previous.versionName) || !semver.test(current.versionName)) {
+            throw new Error('mobile-version.json 必须包含有效的正整数 versionCode 和 x.y.z versionName');
+          }
+          if (current.versionCode > previous.versionCode) process.exit(0);
+          throw new Error(`检测到 Android 原生或 Capacitor 依赖改动，但 versionCode 未递增：${previous.versionCode} → ${current.versionCode}`);
+          NODE
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Restore Android release signing key
+        env:
+          SUJIAN_ANDROID_KEYSTORE_BASE64: ${{ secrets.SUJIAN_ANDROID_KEYSTORE_BASE64 }}
+          SUJIAN_ANDROID_STORE_PASSWORD: ${{ secrets.SUJIAN_ANDROID_STORE_PASSWORD }}
+          SUJIAN_ANDROID_KEY_ALIAS: ${{ secrets.SUJIAN_ANDROID_KEY_ALIAS }}
+          SUJIAN_ANDROID_KEY_PASSWORD: ${{ secrets.SUJIAN_ANDROID_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$SUJIAN_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/suijian-release.jks"
+          echo "SUJIAN_ANDROID_KEYSTORE=$RUNNER_TEMP/suijian-release.jks" >> "$GITHUB_ENV"
+          echo "SUJIAN_ANDROID_STORE_PASSWORD=$SUJIAN_ANDROID_STORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "SUJIAN_ANDROID_KEY_ALIAS=$SUJIAN_ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "SUJIAN_ANDROID_KEY_PASSWORD=$SUJIAN_ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Validate source
+        run: npm test && node tests/release-guard-regression.mjs
+      - name: Build signed Android installer and static PWA
+        run: npm run build:android
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist-mobile
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

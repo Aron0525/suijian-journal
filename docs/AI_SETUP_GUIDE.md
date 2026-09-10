@@ -9,7 +9,7 @@
 1. `README.md`：产品能力和本地运行方式。
 2. `docs/SETUP_GUIDE.md`：人工配置步骤和截图/控制台入口。
 3. `docs/UPLOAD_EXCLUSIONS.md`：明确哪些文件不得提交。
-4. `deploy/` 与 `scripts/deploy-server.sh`：自有服务器、Caddy 与本机构建发布配置。
+4. `.github/workflows/deploy-pages.yml`：GitHub Pages、Android 构建与 Secrets 名称。
 5. `supabase/schema.sql` 与 `supabase/functions/ai-proxy/index.ts`：数据库、Storage、AI 代理。
 6. `app.js`、`scripts/build-mobile-web.mjs`、`scripts/build-native-update-manifest.mjs`：当前项目 URL 和更新地址。
 
@@ -18,7 +18,7 @@
 | 项目 | 状态 | AI 的下一步 |
 |---|---|---|
 | GitHub 仓库 | `Aron0525/suijian-journal`，公开仓库 | 直接向 `main` 推送；不要新建同名仓库。 |
-| 自定义域名网页 | `https://933647.xyz/`，由自有服务器的 Caddy 发布静态资源 | 执行 `npm run deploy:server` 后检查正式域名与更新清单。 |
+| 自定义域名网页 | `https://933647.xyz/`，由 GitHub Actions 发布静态资源 | 推送后检查 Actions 的 Pages 工作流及自定义域名状态。 |
 | Android 签名 Secrets | 4 个必需名称已存在 | 不读取、不打印、不替换其值。 |
 | Supabase AI 代理 | `ai-proxy` 对 `OPTIONS` 返回 204 | 继续保持 JWT 验证；按需设置允许的模型域名。 |
 | `journal_tasks` | 远程 REST 读取返回 404 | 首要动作：在 Supabase SQL Editor 执行 `supabase/schema.sql`。 |
@@ -73,7 +73,7 @@ supabase secrets set AI_ALLOWED_HOSTS=api.deepseek.com,api.openai.com
 
 ### 5. 自定义域名网页和 Android 构建
 
-本机发布脚本 `scripts/deploy-server.sh` 会运行测试、构建 PWA、构建已签名 APK，并将 `dist-mobile/` 发布到 `https://933647.xyz/` 对应的服务器目录。GitHub 不存放用户日记，也不参与用户请求；账号数据、日记、附件与备份由 Supabase 保存。
+工作流在 `.github/workflows/deploy-pages.yml`。它会运行测试、构建 PWA、构建已签名 APK，并将 `dist-mobile/` 发布到 `https://933647.xyz/`。GitHub 不存放用户日记；账号数据、日记、附件与备份由 Supabase 保存。
 
 Android 构建使用以下 GitHub Actions Secrets：
 
@@ -86,16 +86,16 @@ SUJIAN_ANDROID_KEY_PASSWORD
 
 如果换签名证书，四项必须一起替换；否则新 APK 不会覆盖已安装版本。AI 只能检查名称是否存在，不能获取其内容。
 
-### 6. 更换服务器域名或 Supabase 项目时
+### 6. 仓库改名或迁移到新账号时
 
-先确定新的正式域名，然后同步修改以下文件中的旧地址：
+先计算新地址：`https://<GitHub 用户名>.github.io/<仓库名>`，然后同步修改以下文件中的旧地址：
 
 | 文件 | 要改的内容 |
 |---|---|
 | `app.js` | `MOBILE_OTA_MANIFEST_URL`、`NATIVE_APP_UPDATE_MANIFEST_URL`；若迁移 Supabase，还要改默认 URL 和 Publishable Key。 |
-| `scripts/build-mobile-web.mjs` | `releaseAssetBaseUrl`。 |
+| `scripts/build-mobile-web.mjs` | `pagesBaseUrl`。 |
 | `scripts/build-native-update-manifest.mjs` | `DEFAULT_BASE_URL`。 |
-| `index.html`、`index.htm`、`server.py` | CSP 的 `connect-src` 中正式站点域名。 |
+| `index.html`、`index.htm`、`server.py` | CSP 的 `connect-src` 中 GitHub Pages 域名。 |
 | `supabase/config.toml` | `project_id`。 |
 | Supabase Auth 控制台 | Site URL 与 Redirect URLs。 |
 

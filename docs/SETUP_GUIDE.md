@@ -1,13 +1,12 @@
 # 岁笺仓库配置指南
 
-这份文档给第一次接手项目的人使用。仓库内已有前端、PWA、Android 工程、服务器发布脚本和 Supabase 配置脚本；外部平台仍需要按下面步骤完成一次配置。
+这份文档给第一次接手项目的人使用。仓库内已有前端、PWA、Android 工程、GitHub Pages 工作流和 Supabase 配置脚本；外部平台仍需要按下面步骤完成一次配置。
 
 ## 先理解三类平台
 
 | 平台 | 做什么 | 是否保存日记 |
 |---|---|---|
-| 自有服务器 + Caddy | 提供网页、更新包与 APK 下载 | 不保存 |
-| GitHub | 保存代码、提交记录与备份校验 | 不保存 |
+| GitHub / GitHub Pages | 保存代码，自动测试、发布网页、提供更新包与 APK 下载 | 不保存 |
 | Supabase | 注册登录、云同步、数据库、私有附件、AI 代理 | 保存 |
 | DeepSeek / OpenAI 等 | 生成 AI 整理和 AI 汇总结果 | 只在调用时接收本次请求 |
 
@@ -70,16 +69,17 @@ supabase secrets set AI_ALLOWED_HOSTS=api.deepseek.com,api.openai.com
 
 模型 API Key 不需要、也不应写入 Supabase Secret。用户在岁笺的“模型配置”窗口临时输入 Key，线上函数只转发本次请求。
 
-## C. 配置自有服务器与自定义域名
+## C. 配置 GitHub Pages 与自定义域名
 
-服务器运行 Caddy，并把 `933647.xyz` 的 DNS A/AAAA 记录指向该服务器；开放 TCP 80、443。复制 `deploy/server.env.example` 为本机私有的 `deploy/server.env`，填入 SSH 信息后运行：
+仓库已包含 `.github/workflows/deploy-pages.yml`。在 GitHub 仓库中：
 
-```bash
-./scripts/bootstrap-server.sh
-./scripts/deploy-server.sh
-```
+1. 进入 **Settings → Pages**；
+2. 将 Source 设为 **GitHub Actions**；
+3. 向 `main` 推送一次提交；
+4. 在 **Actions** 查看 `Deploy PWA to GitHub Pages` 是否成功；
+5. 在 Pages 设置中将 Custom domain 设为 `933647.xyz`，并打开 `https://933647.xyz/` 验证网页。
 
-首个脚本创建 `/srv/suijian/site` 和 Caddy 配置；第二个脚本运行测试、构建 PWA/OTA/APK、上传并切换服务器版本，最后默认推送 GitHub 备份。完整说明与回退步骤见 [SERVER_DEPLOYMENT.md](SERVER_DEPLOYMENT.md)。用户日记、附件、账号及备份仍保存在 Supabase。
+这个工作流会执行 `npm test`，随后构建 PWA、网页更新包与 Android APK，并把 `dist-mobile/` 发布到自定义域名。GitHub 只负责代码和静态发布；用户日记、附件、账号及备份均保存在 Supabase。
 
 ## D. 配置 Android 签名和 APK
 
@@ -126,9 +126,9 @@ SUJIAN_ANDROID_KEY_PASSWORD
 
 API Key 只存在当前浏览器或 App 会话中。刷新或关闭后需要再次填写；日记正文、提示词、登录账号与模型 Key 的保存位置并不相同。
 
-## F. 换服务器域名或 Supabase 项目时
+## F. 换 GitHub 仓库或 Supabase 项目时
 
-这不是只改一个链接的操作。请根据 `docs/AI_SETUP_GUIDE.md` 的“仓库改名或迁移到新账号时”表格逐项替换服务器域名、Supabase 项目 ID、默认 Supabase URL/Publishable Key、CSP 允许域名和 Supabase Auth 回跳地址，再运行：
+这不是只改一个链接的操作。请根据 `docs/AI_SETUP_GUIDE.md` 的“仓库改名或迁移到新账号时”表格逐项替换 GitHub Pages URL、Supabase 项目 ID、默认 Supabase URL/Publishable Key、CSP 允许域名和 Supabase Auth 回跳地址，再运行：
 
 ```bash
 npm test
@@ -139,7 +139,7 @@ npm run build:android
 ## G. 配置后检查清单
 
 - [ ] `npm test` 通过；
-- [ ] Caddy 已签发 HTTPS，线上网址可打开；
+- [ ] GitHub Pages Actions 成功，线上网址可打开；
 - [ ] Supabase `schema.sql` 已执行；
 - [ ] 注册邮件能回跳到网页；
 - [ ] 手机和电脑用同一邮箱登录后可同步；

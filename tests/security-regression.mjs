@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [app, serviceWorker, edgeFunction, serverDeployScript, manifest, index, indexHtm, schema, styles, capacitorConfig, mobileBuildScript, packageJson, nativeBuildScript, mobileVersion] = await Promise.all([
+const [app, serviceWorker, edgeFunction, githubPagesWorkflow, manifest, index, indexHtm, schema, styles, capacitorConfig, mobileBuildScript, packageJson, nativeBuildScript, mobileVersion] = await Promise.all([
   readFile(new URL('../app.js', import.meta.url), 'utf8'),
   readFile(new URL('../sw.js', import.meta.url), 'utf8'),
   readFile(new URL('../supabase/functions/ai-proxy/index.ts', import.meta.url), 'utf8'),
-  readFile(new URL('../scripts/deploy-server.sh', import.meta.url), 'utf8'),
+  readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8'),
   readFile(new URL('../manifest.webmanifest', import.meta.url), 'utf8'),
   readFile(new URL('../index.html', import.meta.url), 'utf8'),
   readFile(new URL('../index.htm', import.meta.url), 'utf8'),
@@ -138,10 +138,13 @@ assert.ok(archiveEntriesSource, 'calendar archive entries implementation should 
 assert.doesNotMatch(archiveEntriesSource, /calendarFilter/);
 assert.match(styles, /\.archive-jump-bar/);
 assert.match(styles, /\.calendar-archive-list\s*\{[^}]*max-height:\s*none;/);
-assert.match(serverDeployScript, /npm run build:android/);
-assert.match(serverDeployScript, /rsync -az --delete --delay-updates/);
-assert.match(serverDeployScript, /native-app-update\.json/);
-assert.match(serverDeployScript, /git push origin main/);
+assert.match(githubPagesWorkflow, /actions\/setup-java@v6/);
+assert.match(githubPagesWorkflow, /android-actions\/setup-android@v4/);
+assert.match(githubPagesWorkflow, /SUJIAN_ANDROID_KEYSTORE_BASE64/);
+assert.match(githubPagesWorkflow, /npm run build:android/);
+assert.match(githubPagesWorkflow, /actions\/upload-pages-artifact@v5/);
+assert.match(githubPagesWorkflow, /path: dist-mobile/);
+assert.match(githubPagesWorkflow, /actions\/deploy-pages@v5/);
 assert.match(capacitorConfig, /CapacitorUpdater/);
 assert.match(capacitorConfig, /autoUpdate: 'off'/);
 assert.match(mobileBuildScript, /app-update\.json/);

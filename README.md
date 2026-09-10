@@ -55,11 +55,11 @@ python3 server.py
 
 注册后需完成验证邮件中的确认，再回到“登录 / 账号”窗口使用同一邮箱登录。Supabase 的 **Authentication → URL Configuration** 需要将线上站点设为 Site URL，并将该站点（及本地调试地址）加入 Redirect URLs。
 
-## 代码发布与线上数据（自有服务器 + GitHub 备份 + Supabase）
+## 代码发布与线上数据（GitHub + 自定义域名 + Supabase）
 
-- 用户统一从自定义域名 `https://933647.xyz/` 打开网站；Caddy 从服务器的 `/srv/suijian/site` 提供网页、PWA、APK 下载和 OTA 清单。GitHub 只保存代码、提交记录和备份校验，不提供运行时静态资源。
-- 日常发布在电脑本机构建：`npm run deploy:server` 会完成测试、生成 `dist-mobile/`、上传新版本并切换服务器站点目录；成功后默认执行 `git push origin main` 作为备份。一次性服务器初始化、发布和回退见 [docs/SERVER_DEPLOYMENT.md](docs/SERVER_DEPLOYMENT.md)。
-- 注册登录、账号隔离、日记同步、附件、备份和 AI 代理都由 Supabase 提供。日记保存在 Supabase Postgres/Storage，不进入 Git 仓库。
+- 用户统一从自定义域名 `https://933647.xyz/` 打开网站；GitHub 仓库只保存代码、提交记录、静态发布文件和自动化工作流，不保存用户日记。
+- 推送到 `main` 后，GitHub Actions 会运行 `npm ci`、`npm test`、`npm run build:mobile`，再把 `dist-mobile/` 发布为自定义域名下的静态网页、OTA 更新包和 APK 下载。工作流在 `.github/workflows/deploy-pages.yml`。
+- 注册登录、账号隔离、日记同步、附件、备份和 AI 代理都由 Supabase 提供。日记保存在 Supabase Postgres/Storage，不保存在 GitHub Pages，也不进入 Git 仓库。
 - Supabase **Authentication → URL Configuration** 的 Site URL 使用 `https://933647.xyz/`，Redirect URLs 至少加入 `https://933647.xyz/**`；本地开发地址可以继续保留。
 
 当前线上地址：[https://933647.xyz/](https://933647.xyz/)；代码仓库：[Aron0525/suijian-journal](https://github.com/Aron0525/suijian-journal)。
@@ -73,7 +73,7 @@ Android 已使用 Capacitor 原生壳打包，安装包内置 `dist-mobile/` 的
 - 写作提醒：Android 原生安装包含 Capacitor Local Notifications（本地通知）插件，可在 App 未打开时按所选日期与时间提醒；首次加入该原生能力需要重新安装新 APK，之后网页功能仍可通过现有自动更新下发。
 - 自动网页更新：App 会在启动、回到前台、网络恢复及每 10 分钟检查 `933647.xyz` 的更新清单；新网页包通过 SHA-256 校验后下载，并在 App 退出、切到后台或下次重开时自动启用。大多数日常的页面、功能、文案和样式更新都不需要重新下载 APK。
 - 原生安装包更新：通知权限、Capacitor 插件、Android 原生代码等变更会生成新 APK。App 的“账号 → App 更新”会检查并打开最新 APK 下载；下载后 Android 系统会显示安装确认，这是系统限制，不能静默覆盖安装。
-- 签名与发布：`build-android-apk.sh` 生成 `岁笺-Android-v<版本>.apk`、`native-app-update.json` 和 SHA-256 校验值。本机的 Android 签名配置位于 `~/.config/suijian/android-signing.env`；`npm run deploy:server` 将构建物上传到服务器，确保后续原生安装包可以覆盖安装。
+- 签名与发布：`build-android-apk.sh` 生成 `岁笺-Android-v<版本>.apk`、`native-app-update.json` 和 SHA-256 校验值。GitHub Actions 使用仓库 Secrets 中的同一签名身份构建，再把 APK 和清单发布到 `933647.xyz`，确保后续原生安装包可以覆盖安装。
 - 本机重新打包：在已安装 JDK 21 与 Android SDK 的电脑上运行 `npm run build:android`。
 - 回退构建改动：运行 `./rollback-android-apk.sh`。
 

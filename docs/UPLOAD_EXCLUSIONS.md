@@ -5,7 +5,7 @@
 | 未上传内容 | 原因 | 由谁保存 / 如何恢复 |
 |---|---|---|
 | `node_modules/`、`build/`、`dist-mobile/` | 可由 `npm ci`、`npm run build:mobile` 重新生成 | 本机或 GitHub Actions 生成 |
-| `*.apk`、`*.aab`、`*.zip` | 构建产物较大，由本机发布脚本上传服务器 | `npm run build:android` 或 `npm run deploy:server` 重新生成 |
+| `*.apk`、`*.aab`、`*.zip` | 构建产物较大，APK 由 Pages 工作流发布 | `npm run build:android` 或 GitHub Actions 重新生成 |
 | `android/app/src/main/assets/`、iOS `public/` | Capacitor 同步生成 | `npm run sync:mobile` 重新生成 |
 | `android/local.properties` | 只包含本机 Android SDK 路径 | Android Studio / SDK 环境生成 |
 | `*.jks`、`*.keystore`、签名环境文件 | Android 签名私钥与密码 | 本机 `~/.config/suijian/android-signing.env`；GitHub Actions Secrets |
@@ -19,7 +19,8 @@
 
 1. Supabase 项目及其数据库、Auth、Storage、Edge Function；
 2. Supabase Auth 的 Site URL 与 Redirect URLs；
-3. 服务器 SSH 配置、Caddy 配置与 Android 签名材料；
+3. GitHub Pages 的 GitHub Actions 发布设置；
+4. GitHub Actions 的 Android 签名 Secrets；
 5. 用户自行填写的模型 API Key；
 6. 本机 Android 打包环境：JDK 21、Android SDK、签名文件。
 
