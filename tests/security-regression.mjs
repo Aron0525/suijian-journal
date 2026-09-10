@@ -138,13 +138,13 @@ assert.ok(archiveEntriesSource, 'calendar archive entries implementation should 
 assert.doesNotMatch(archiveEntriesSource, /calendarFilter/);
 assert.match(styles, /\.archive-jump-bar/);
 assert.match(styles, /\.calendar-archive-list\s*\{[^}]*max-height:\s*none;/);
-assert.match(githubPagesWorkflow, /actions\/setup-java@v4/);
-assert.match(githubPagesWorkflow, /android-actions\/setup-android@v3/);
+assert.match(githubPagesWorkflow, /actions\/setup-java@v6/);
+assert.match(githubPagesWorkflow, /android-actions\/setup-android@v4/);
 assert.match(githubPagesWorkflow, /SUJIAN_ANDROID_KEYSTORE_BASE64/);
 assert.match(githubPagesWorkflow, /npm run build:android/);
-assert.match(githubPagesWorkflow, /actions\/upload-pages-artifact@v3/);
+assert.match(githubPagesWorkflow, /actions\/upload-pages-artifact@v5/);
 assert.match(githubPagesWorkflow, /path: dist-mobile/);
-assert.match(githubPagesWorkflow, /actions\/deploy-pages@v4/);
+assert.match(githubPagesWorkflow, /actions\/deploy-pages@v5/);
 assert.match(capacitorConfig, /CapacitorUpdater/);
 assert.match(capacitorConfig, /autoUpdate: 'off'/);
 assert.match(mobileBuildScript, /app-update\.json/);
