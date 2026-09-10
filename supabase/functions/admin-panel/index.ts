@@ -113,9 +113,45 @@ async function listAttachmentFiles(admin: SupabaseClient, userId: string) {
   return { files, warnings };
 }
 
+function attachmentBytes(attachments: unknown) {
+  if (!Array.isArray(attachments)) return { count: 0, bytes: 0 };
+  return attachments.reduce((total, attachment) => {
+    if (!attachment || typeof attachment !== 'object') return total;
+    const record = attachment as Record<string, unknown>;
+    const metadata = record.metadata && typeof record.metadata === 'object' ? record.metadata as Record<string, unknown> : {};
+    const bytes = Number(record.size ?? record.bytes ?? metadata.size) || 0;
+    return { count: total.count + 1, bytes: total.bytes + Math.max(bytes, 0) };
+  }, { count: 0, bytes: 0 });
+}
+
+function userActivityStats(rows: Record<string, unknown>[], userIds: string[]) {
+  const stats = new Map(userIds.map((userId) => [userId, { entry_count: 0, attachment_count: 0, attachment_bytes: 0 }]));
+  rows.forEach((row) => {
+    const userId = String(row.user_id || '');
+    const current = stats.get(userId);
+    if (!current) return;
+    const attachments = attachmentBytes(row.attachments);
+    current.entry_count += 1;
+    current.attachment_count += attachments.count;
+    current.attachment_bytes += attachments.bytes;
+  });
+  return stats;
+}
+
 async function listUsers(request: Request, admin: SupabaseClient, actor: User, page: number) {
   const { data, error } = await admin.auth.admin.listUsers({ page, perPage: USER_PAGE_SIZE });
   if (error) throw error;
+  const userIds = data.users.map((user) => user.id);
+  const [{ data: entryRows, error: entryError }, { data: roleRows, error: roleError }] = await Promise.all([
+    userIds.length
+      ? admin.from('journal_entries').select('user_id, attachments').in('user_id', userIds).is('deleted_at', null)
+      : Promise.resolve({ data: [], error: null }),
+    userIds.length
+      ? admin.from('journal_admins').select('user_id').in('user_id', userIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const stats = userActivityStats((entryError ? [] : (entryRows || [])) as Record<string, unknown>[], userIds);
+  const adminIds = new Set((roleError ? [] : (roleRows || [])).map((row) => String(row.user_id)));
   await audit(admin, actor, 'list_users', null, { page });
   return json(request, {
     users: data.users.map((user) => ({
@@ -125,6 +161,8 @@ async function listUsers(request: Request, admin: SupabaseClient, actor: User, p
       last_sign_in_at: user.last_sign_in_at || null,
       email_confirmed_at: user.email_confirmed_at || null,
       banned_until: user.banned_until || null,
+      role: adminIds.has(user.id) ? 'admin' : 'user',
+      ...(stats.get(user.id) || { entry_count: 0, attachment_count: 0, attachment_bytes: 0 }),
     })),
     next_page: data.nextPage || null,
   });
@@ -135,7 +173,7 @@ async function userData(request: Request, admin: SupabaseClient, actor: User, us
   if (!UUID.test(userId)) throw Object.assign(new Error('用户标识无效'), { status: 400 });
   const userResult = await admin.auth.admin.getUserById(userId);
   if (userResult.error || !userResult.data.user) throw userResult.error || Object.assign(new Error('用户不存在'), { status: 404 });
-  const [entries, drafts, daily, periods, tasks, backups, aiSettings, attachmentResult] = await Promise.all([
+  const [entries, drafts, daily, periods, tasks, backups, aiSettings, auditEvents, adminRole, attachmentResult] = await Promise.all([
     queryUserDataset('日记', admin.from('journal_entries').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
     queryUserDataset('草稿', admin.from('journal_drafts').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
     queryUserDataset('当天摘要', admin.from('daily_summaries').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
@@ -143,9 +181,11 @@ async function userData(request: Request, admin: SupabaseClient, actor: User, us
     queryUserDataset('待办', admin.from('journal_tasks').select('*').eq('user_id', userId).order('updated_at', { ascending: false })),
     queryUserDataset('云端备份', admin.from('journal_backups').select('*').eq('user_id', userId).order('backup_date', { ascending: false })),
     queryUserDataset('模型配置', admin.from('ai_settings').select('*').eq('user_id', userId).maybeSingle()),
+    queryUserDataset('管理员操作记录', admin.from('admin_audit_events').select('action, actor_user_id, detail, created_at').eq('target_user_id', userId).order('created_at', { ascending: false }).limit(100)),
+    queryUserDataset('角色', admin.from('journal_admins').select('user_id').eq('user_id', userId).maybeSingle()),
     listAttachmentFiles(admin, userId),
   ]);
-  const warnings = [entries.warning, drafts.warning, daily.warning, periods.warning, tasks.warning, backups.warning, aiSettings.warning, ...attachmentResult.warnings].filter(Boolean);
+  const warnings = [entries.warning, drafts.warning, daily.warning, periods.warning, tasks.warning, backups.warning, aiSettings.warning, auditEvents.warning, adminRole.warning, ...attachmentResult.warnings].filter(Boolean);
   const entryRows = Array.isArray(entries.data) ? entries.data : [];
   await audit(admin, actor, 'view_user_data', userId, { entry_count: entryRows.length, warnings });
   const targetUser = userResult.data.user;
@@ -161,6 +201,7 @@ async function userData(request: Request, admin: SupabaseClient, actor: User, us
       email_confirmed_at: targetUser.email_confirmed_at || null,
       banned_until: targetUser.banned_until || null,
       credential: { providers, password_login_available: providers.includes('email') },
+      role: adminRole.data && !Array.isArray(adminRole.data) ? 'admin' : 'user',
     },
     data: {
       entries: entryRows,
@@ -171,6 +212,7 @@ async function userData(request: Request, admin: SupabaseClient, actor: User, us
       backups: Array.isArray(backups.data) ? backups.data : [],
       ai_settings: safeAiSettings(aiSettings.data && !Array.isArray(aiSettings.data) ? aiSettings.data as Record<string, unknown> : null),
       attachments: attachmentResult.files,
+      audit_events: Array.isArray(auditEvents.data) ? auditEvents.data : [],
       data_warnings: warnings,
     },
   });
@@ -196,6 +238,11 @@ async function changeUserState(request: Request, admin: SupabaseClient, actor: U
     });
     if (!response.ok) throw Object.assign(new Error('发送密码重设邮件失败'), { status: response.status });
     await audit(admin, actor, action, userId);
+    return json(request, { ok: true });
+  }
+  if (action === 'record_export') {
+    const format = payload.format === 'excel' ? 'excel' : 'json';
+    await audit(admin, actor, `export_user_${format}`, userId);
     return json(request, { ok: true });
   }
   throw Object.assign(new Error('不支持的管理员操作'), { status: 400 });

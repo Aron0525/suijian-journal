@@ -608,6 +608,17 @@
           <button id="admin-refresh-users" type="button" class="primary-button">刷新用户</button>
           <span id="admin-status" class="sync-config-status" aria-live="polite">正在检查权限</span>
         </div>
+        <div class="admin-list-filters" role="search" aria-label="筛选用户">
+          <label class="sr-only" for="admin-user-query">搜索用户</label>
+          <input id="admin-user-query" type="search" maxlength="160" placeholder="搜索邮箱或用户 ID" autocomplete="off" />
+          <label class="sr-only" for="admin-user-status-filter">账号状态</label>
+          <select id="admin-user-status-filter" aria-label="账号状态">
+            <option value="all">全部状态</option>
+            <option value="active">正常</option>
+            <option value="suspended">已停用</option>
+          </select>
+          <button id="admin-clear-user-filters" type="button" class="quiet-button">清除筛选</button>
+        </div>
         <div id="admin-user-list" class="admin-user-list" aria-live="polite"></div>
         <section id="admin-user-detail" class="admin-user-detail" hidden aria-labelledby="admin-user-detail-title">
           <div class="admin-user-detail-head">
@@ -650,6 +661,10 @@
             <section class="admin-data-section" aria-labelledby="admin-backup-list-title">
               <h3 id="admin-backup-list-title">云端备份与附件</h3>
               <div id="admin-backup-list" class="admin-record-list"></div>
+            </section>
+            <section class="admin-data-section" aria-labelledby="admin-audit-list-title">
+              <h3 id="admin-audit-list-title">管理员操作记录</h3>
+              <div id="admin-audit-list" class="admin-record-list"></div>
             </section>
             <section class="admin-data-section" aria-labelledby="admin-model-overview-title">
               <h3 id="admin-model-overview-title">模型配置</h3>

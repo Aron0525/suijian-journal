@@ -313,6 +313,8 @@ function emptyAdminState() {
     page: 1,
     nextPage: null,
     users: [],
+    userQuery: '',
+    userStatus: 'all',
     selectedUser: null,
     selectedData: null,
     detailLoading: false,
@@ -533,6 +535,9 @@ const elements = {
   closeAdminDialog: document.querySelector('#close-admin-dialog'),
   adminRefreshUsers: document.querySelector('#admin-refresh-users'),
   adminStatus: document.querySelector('#admin-status'),
+  adminUserQuery: document.querySelector('#admin-user-query'),
+  adminUserStatusFilter: document.querySelector('#admin-user-status-filter'),
+  adminClearUserFilters: document.querySelector('#admin-clear-user-filters'),
   adminUserList: document.querySelector('#admin-user-list'),
   adminUserDetail: document.querySelector('#admin-user-detail'),
   adminUserDetailTitle: document.querySelector('#admin-user-detail-title'),
@@ -548,6 +553,7 @@ const elements = {
   adminSummaryList: document.querySelector('#admin-summary-list'),
   adminTaskList: document.querySelector('#admin-task-list'),
   adminBackupList: document.querySelector('#admin-backup-list'),
+  adminAuditList: document.querySelector('#admin-audit-list'),
   adminModelOverview: document.querySelector('#admin-model-overview'),
   periodSummaryDialog: document.querySelector('#period-summary-dialog'),
   closePeriodSummaryDialog: document.querySelector('#close-period-summary-dialog'),
@@ -4219,6 +4225,25 @@ function adminUserDataSummary(data) {
   return `日记 ${count('entries')} 条 · 草稿 ${count('drafts')} 条 · 当天摘要 ${count('daily_summaries')} 条 · 阶段总结 ${count('period_summaries')} 条 · 待办 ${count('tasks')} 条 · 云端备份 ${count('backups')} 条 · 附件 ${count('attachments')} 个`;
 }
 
+function adminByteLabel(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function filteredAdminUsers() {
+  const query = state.admin.userQuery.trim().toLowerCase();
+  const status = state.admin.userStatus;
+  return state.admin.users.filter((user) => {
+    const isSuspended = Boolean(user.banned_until);
+    if (status === 'active' && isSuspended) return false;
+    if (status === 'suspended' && !isSuspended) return false;
+    if (!query) return true;
+    return [user.email, user.id].some((value) => String(value || '').toLowerCase().includes(query));
+  });
+}
+
 function adminAppendEmpty(container, copy = '服务器中暂无内容。') {
   if (!container) return;
   const empty = document.createElement('p');
@@ -4289,7 +4314,7 @@ function renderAdminDataSections(data, user) {
   const containers = [
     elements.adminAccountOverview, elements.adminEntryList, elements.adminDraftList,
     elements.adminSummaryList, elements.adminTaskList, elements.adminBackupList,
-    elements.adminModelOverview,
+    elements.adminAuditList, elements.adminModelOverview,
   ];
   containers.forEach((container) => container?.replaceChildren());
   if (!data || typeof data !== 'object') return;
@@ -4301,8 +4326,10 @@ function renderAdminDataSections(data, user) {
   adminAppendField(elements.adminAccountOverview, '最近登录', adminDateLabel(user?.last_sign_in_at));
   adminAppendField(elements.adminAccountOverview, '邮箱验证', user?.email_confirmed_at ? adminDateLabel(user.email_confirmed_at) : '未验证');
   adminAppendField(elements.adminAccountOverview, '账号状态', user?.banned_until ? '已停用' : '正常');
+  adminAppendField(elements.adminAccountOverview, '角色', user?.role === 'admin' ? '管理员' : '普通用户');
   adminAppendField(elements.adminAccountOverview, '登录方式', Array.isArray(credential.providers) && credential.providers.length ? credential.providers.join('、') : '邮箱密码');
   adminAppendField(elements.adminAccountOverview, '登录密码', '不可读取（认证服务器仅保存不可逆哈希）');
+  adminAppendField(elements.adminAccountOverview, '当前设备会话', 'Supabase 未向此面板开放设备会话明细；可用重设密码或停用账号保护访问。');
 
   const warnings = Array.isArray(data.data_warnings) ? data.data_warnings : [];
   warnings.forEach((warning) => {
@@ -4359,6 +4386,15 @@ function renderAdminDataSections(data, user) {
   }));
   if (!backups.length && !attachments.length) adminAppendEmpty(elements.adminBackupList);
 
+  const auditEvents = Array.isArray(data.audit_events) ? data.audit_events : [];
+  auditEvents.forEach((event) => adminAppendRecord(elements.adminAuditList, {
+    title: adminAuditActionLabel(event.action),
+    date: adminDateLabel(event.created_at),
+    meta: event.actor_email ? `操作人：${event.actor_email}` : '管理员操作',
+    content: adminAuditDetailLabel(event.detail),
+  }));
+  if (!auditEvents.length) adminAppendEmpty(elements.adminAuditList, '暂无针对该用户的管理员操作记录。');
+
   const aiSettings = data.ai_settings;
   if (aiSettings?.config) {
     const config = aiSettings.config;
@@ -4374,7 +4410,23 @@ function renderAdminDataSections(data, user) {
   }
 }
 
-function downloadSelectedAdminUser(format) {
+function adminAuditActionLabel(action) {
+  const labels = {
+    view_user_data: '查看用户数据', list_users: '查看用户列表', send_password_reset: '发送重设密码邮件',
+    suspend_user: '停用账号', restore_user: '恢复账号', export_user_json: '导出 JSON', export_user_excel: '导出 Excel',
+  };
+  return labels[action] || action || '管理员操作';
+}
+
+function adminAuditDetailLabel(detail) {
+  if (!detail || typeof detail !== 'object') return '';
+  const values = Object.entries(detail)
+    .filter(([key]) => !['access_token', 'refresh_token', 'apiKey', 'password'].includes(key))
+    .map(([key, value]) => `${key}：${typeof value === 'string' ? value : JSON.stringify(value)}`);
+  return values.join(' · ');
+}
+
+async function downloadSelectedAdminUser(format) {
   const user = state.admin.selectedUser;
   const data = state.admin.selectedData;
   const exporter = globalThis.SuijianAdminExport;
@@ -4383,6 +4435,11 @@ function downloadSelectedAdminUser(format) {
     return;
   }
   try {
+    try {
+      await adminRequest('record_export', { method: 'POST', body: { user_id: user.id, format } });
+    } catch (error) {
+      console.info('Administrator export audit could not be recorded.', error);
+    }
     const output = format === 'excel'
       ? exporter.createExcelExport(user, data)
       : exporter.createJsonExport(user, data);
@@ -4422,16 +4479,17 @@ function renderAdminUserList() {
     list.append(error);
     return;
   }
-  if (!state.admin.users.length) {
+  const users = filteredAdminUsers();
+  if (!users.length) {
     const empty = document.createElement('p');
     empty.className = 'admin-empty-copy';
-    empty.textContent = '暂无可显示的注册用户。';
+    empty.textContent = state.admin.users.length ? '没有符合当前筛选条件的用户。' : '暂无可显示的注册用户。';
     list.append(empty);
     return;
   }
 
   const fragment = document.createDocumentFragment();
-  for (const user of state.admin.users) {
+  for (const user of users) {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'admin-user-row';
@@ -4444,6 +4502,10 @@ function renderAdminUserList() {
     const meta = document.createElement('small');
     meta.textContent = `注册：${adminDateLabel(user.created_at)} · 最近登录：${adminDateLabel(user.last_sign_in_at)}`;
     identity.append(email, meta);
+    const metrics = document.createElement('small');
+    metrics.className = 'admin-user-metrics';
+    metrics.textContent = `日记 ${Number(user.entry_count) || 0} 条 · 附件 ${Number(user.attachment_count) || 0} 个 · ${adminByteLabel(user.attachment_bytes)}`;
+    identity.append(metrics);
     const stateLabel = document.createElement('span');
     stateLabel.className = `admin-user-state${user.banned_until ? ' is-suspended' : ''}`;
     stateLabel.textContent = user.banned_until ? '已停用' : '正常';
@@ -4471,6 +4533,8 @@ function renderAdminPanel() {
       : (admin.loadingUsers ? '正在读取用户列表' : (admin.error ? '读取失败' : (admin.isAdmin ? `已加载 ${admin.users.length} 位用户` : '无管理员权限')));
   }
   if (elements.adminRefreshUsers) elements.adminRefreshUsers.disabled = !admin.isAdmin || admin.loadingUsers;
+  if (elements.adminUserQuery) elements.adminUserQuery.value = admin.userQuery;
+  if (elements.adminUserStatusFilter) elements.adminUserStatusFilter.value = admin.userStatus;
   renderAdminUserList();
   const hasDetail = Boolean(admin.selectedUser);
   if (elements.adminUserDetail) elements.adminUserDetail.hidden = !hasDetail;
@@ -4597,6 +4661,8 @@ function closeAdminDialog() {
   clearAdminUserDetail({ renderPanel: false });
   state.admin.users = [];
   state.admin.nextPage = null;
+  state.admin.userQuery = '';
+  state.admin.userStatus = 'all';
   closeWorkspaceDialog(elements.adminDialog);
 }
 
@@ -6211,6 +6277,21 @@ function bindEvents() {
   elements.adminShortcutButton?.addEventListener('click', () => void openAdminDialog());
   elements.closeAdminDialog?.addEventListener('click', closeAdminDialog);
   elements.adminRefreshUsers?.addEventListener('click', () => void loadAdminUsers());
+  elements.adminUserQuery?.addEventListener('input', () => {
+    state.admin.userQuery = elements.adminUserQuery.value.slice(0, 160);
+    renderAdminUserList();
+  });
+  elements.adminUserStatusFilter?.addEventListener('change', () => {
+    state.admin.userStatus = ['all', 'active', 'suspended'].includes(elements.adminUserStatusFilter.value)
+      ? elements.adminUserStatusFilter.value
+      : 'all';
+    renderAdminUserList();
+  });
+  elements.adminClearUserFilters?.addEventListener('click', () => {
+    state.admin.userQuery = '';
+    state.admin.userStatus = 'all';
+    renderAdminPanel();
+  });
   elements.closeAdminUserDetail?.addEventListener('click', () => clearAdminUserDetail());
   elements.adminSendPasswordReset?.addEventListener('click', () => void sendAdminPasswordReset());
   elements.adminToggleUserSuspension?.addEventListener('click', () => void toggleAdminUserSuspension());
