@@ -31,5 +31,6 @@ assert.equal(manifest.versionName, version.versionName);
 assert.equal(manifest.apkUrl, `https://933647.xyz/downloads/suijian-android-v${version.versionName}.apk`);
 assert.equal(manifest.checksum, createHash('sha256').update(apkBytes).digest('hex'));
 assert.equal(await readFile(join(outputPath, 'downloads', `suijian-android-v${version.versionName}.apk`), 'utf8'), apkBytes.toString());
+assert.equal(await readFile(join(outputPath, 'downloads', 'suijian-android-latest.apk'), 'utf8'), apkBytes.toString());
 
 console.log(`Native Android update package regression checks passed: v${manifest.versionName}`);

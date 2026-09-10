@@ -23,10 +23,12 @@ if (!Number.isSafeInteger(versionCode) || versionCode < 1) throw new Error('mobi
 if (!/^\d+\.\d+\.\d+$/.test(versionName)) throw new Error('mobile-version.json 的 versionName 必须是 x.y.z');
 
 const apkName = `suijian-android-v${versionName}.apk`;
+const latestApkName = 'suijian-android-latest.apk';
 const downloadsPath = resolve(outputPath, 'downloads');
 const apkBytes = await readFile(apkPath);
 await mkdir(downloadsPath, { recursive: true });
 await copyFile(apkPath, resolve(downloadsPath, apkName));
+await copyFile(apkPath, resolve(downloadsPath, latestApkName));
 
 const manifest = {
   versionCode,

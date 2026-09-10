@@ -671,9 +671,13 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
 .ai-prompt-shortcut .quiet-button { min-height: 30px; }
 .ai-config-dialog .dialog-note { margin: 9px 0 0; padding-top: 8px; line-height: 1.45; }
 .ai-config-dialog .dialog-actions { margin-top: 10px; }
-.desktop-app-card p { margin: -3px 0 8px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
-.desktop-app-url { display: block; overflow-wrap: anywhere; color: var(--clay-deep); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; }
-.desktop-app-card .quiet-button { min-height: 32px; margin-top: 9px; padding: 5px 0; font-size: 11px; }
+.cross-device-card { border-top: 3px solid rgba(198, 109, 76, .42); }
+.cross-device-card[hidden] { display: none; }
+.cross-device-card p { margin: -3px 0 8px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.cross-device-url { display: block; overflow-wrap: anywhere; color: var(--clay-deep); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; }
+.cross-device-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.cross-device-actions .primary-button, .cross-device-actions .quiet-button { min-height: 32px; margin: 0; padding: 6px 10px; font-size: 11px; }
+.cross-device-actions .primary-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 
 @media (max-width: 760px) {
   .top-tools { justify-content: space-between; flex-wrap: nowrap; }
@@ -701,6 +705,8 @@ textarea { display: block; width: 100%; min-height: 205px; resize: vertical; mar
   .ai-config-dialog .dialog-actions { margin-top: 7px; }
   .ai-config-dialog .dialog-actions .quiet-button, .ai-config-dialog .dialog-actions .primary-button { min-height: 36px; padding: 7px 10px; }
   .prompt-editor-dialog textarea { min-height: 88px; max-height: 88px; }
+  .cross-device-actions { flex-direction: column; align-items: stretch; }
+  .cross-device-actions .primary-button, .cross-device-actions .quiet-button { width: 100%; }
 }
 
 /* 桌面端双栏工作台 */

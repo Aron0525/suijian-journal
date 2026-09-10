@@ -4,6 +4,7 @@ const LEGACY_AI_CONFIG_KEY = 'suijian-ai-config-v1';
 const ACCOUNT_AI_CONFIG_PREFIX = 'suijian-ai-config-account-v2:';
 const AI_SETTINGS_TABLE = 'ai_settings';
 const DESKTOP_APP_URL = 'https://933647.xyz/';
+const ANDROID_APP_DOWNLOAD_URL = 'https://933647.xyz/downloads/suijian-android-latest.apk';
 const CLOUD_CONFIG_KEY = 'suijian-supabase-config-v1';
 const CLOUD_SESSION_KEY = 'suijian-supabase-session-v1';
 const ACCOUNT_CLOUD_ACTIVITY_PREFIX = 'suijian-cloud-activity-v2:';
@@ -486,6 +487,10 @@ const elements = {
   accountDialog: document.querySelector('#account-dialog'),
   closeAccountDialog: document.querySelector('#close-account-dialog'),
   accountDialogCopy: document.querySelector('#account-dialog-copy'),
+  androidAppCard: document.querySelector('#android-app-card'),
+  androidAppUrl: document.querySelector('#android-app-url'),
+  copyAndroidAppUrl: document.querySelector('#copy-android-app-url'),
+  desktopAppCard: document.querySelector('#desktop-app-card'),
   desktopAppUrl: document.querySelector('#desktop-app-url'),
   copyDesktopAppUrl: document.querySelector('#copy-desktop-app-url'),
   mobileUpdatePanel: document.querySelector('#mobile-update-panel'),
@@ -3367,6 +3372,15 @@ function copyDesktopAppUrl() {
   showToast(DESKTOP_APP_URL);
 }
 
+function copyAndroidAppUrl() {
+  const copy = navigator.clipboard?.writeText(ANDROID_APP_DOWNLOAD_URL);
+  if (copy) {
+    copy.then(() => showToast('Android 下载地址已复制')).catch(() => showToast(ANDROID_APP_DOWNLOAD_URL));
+    return;
+  }
+  showToast(ANDROID_APP_DOWNLOAD_URL);
+}
+
 function entryForEditing(id) {
   return state.data.entries.find((entry) => entry.id === id && !entry.deletedAt) || null;
 }
@@ -4661,6 +4675,7 @@ function renderCloudSyncDialog() {
 }
 
 function renderCloudDialogs() {
+  renderCrossDeviceAccess();
   renderMobileAppUpdatePanel();
   renderCloudAccountDialog();
   renderCloudSyncDialog();
@@ -5922,6 +5937,16 @@ function isNativeMobileApp() {
   return Boolean(window.Capacitor?.isNativePlatform?.());
 }
 
+function renderCrossDeviceAccess() {
+  const mobileExperience = isNativeMobileApp() || window.matchMedia?.('(max-width: 760px)').matches === true;
+  elements.androidAppCard.hidden = mobileExperience;
+  elements.desktopAppCard.hidden = !mobileExperience;
+  elements.androidAppUrl.href = ANDROID_APP_DOWNLOAD_URL;
+  elements.androidAppUrl.textContent = ANDROID_APP_DOWNLOAD_URL;
+  elements.desktopAppUrl.href = DESKTOP_APP_URL;
+  elements.desktopAppUrl.textContent = DESKTOP_APP_URL;
+}
+
 function nativeAppPlugin() {
   const capacitor = window.Capacitor;
   if (!isNativeMobileApp()) return null;
@@ -6191,6 +6216,7 @@ function bindEvents() {
   elements.adminToggleUserSuspension?.addEventListener('click', () => void toggleAdminUserSuspension());
   elements.adminDownloadJson?.addEventListener('click', () => downloadSelectedAdminUser('json'));
   elements.adminDownloadExcel?.addEventListener('click', () => downloadSelectedAdminUser('excel'));
+  elements.copyAndroidAppUrl.addEventListener('click', copyAndroidAppUrl);
   elements.copyDesktopAppUrl.addEventListener('click', copyDesktopAppUrl);
   elements.checkMobileUpdate.addEventListener('click', () => void checkMobileUpdatesManually());
   elements.downloadMobileUpdate.addEventListener('click', openNativeInstallerDownload);
@@ -6223,6 +6249,7 @@ function bindEvents() {
     void checkNativeAppUpdate({ quiet: true });
     void checkNativeInstallerUpdate({ quiet: true });
   });
+  window.addEventListener('resize', () => renderCrossDeviceAccess());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') syncBeforeLeaving();
     if (document.visibilityState === 'visible') {

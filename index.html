@@ -527,13 +527,26 @@
             <button id="download-mobile-update" type="button" class="primary-button" hidden>下载新版 Android 包</button>
           </div>
         </section>
-        <section class="sync-card desktop-app-card card" aria-labelledby="desktop-app-title">
+        <section id="android-app-card" class="sync-card cross-device-card android-app-card card" hidden aria-labelledby="android-app-title">
           <div class="sync-card-head">
-            <div><span class="prompt-kicker">电脑端</span><strong id="desktop-app-title">在电脑继续记录</strong></div>
+            <div><span class="prompt-kicker">Android App</span><strong id="android-app-title">在手机上继续记录</strong></div>
+          </div>
+          <p>下载 Android App 后，用同一账号登录；日记和模型配置会自动同步。</p>
+          <a id="android-app-url" class="cross-device-url" href="https://933647.xyz/downloads/suijian-android-latest.apk" target="_blank" rel="noopener">https://933647.xyz/downloads/suijian-android-latest.apk</a>
+          <div class="cross-device-actions">
+            <a id="download-android-app" class="primary-button" href="https://933647.xyz/downloads/suijian-android-latest.apk" target="_blank" rel="noopener">下载 Android App</a>
+            <button id="copy-android-app-url" type="button" class="quiet-button">复制下载地址</button>
+          </div>
+        </section>
+        <section id="desktop-app-card" class="sync-card cross-device-card desktop-app-card card" hidden aria-labelledby="desktop-app-title">
+          <div class="sync-card-head">
+            <div><span class="prompt-kicker">电脑端</span><strong id="desktop-app-title">在电脑上继续记录</strong></div>
           </div>
           <p>用同一账号登录这个网址，日记与模型配置会自动同步。</p>
-          <a id="desktop-app-url" class="desktop-app-url" href="https://933647.xyz/" target="_blank" rel="noopener">https://933647.xyz/</a>
-          <button id="copy-desktop-app-url" type="button" class="quiet-button">复制电脑端网址</button>
+          <a id="desktop-app-url" class="cross-device-url" href="https://933647.xyz/" target="_blank" rel="noopener">https://933647.xyz/</a>
+          <div class="cross-device-actions">
+            <button id="copy-desktop-app-url" type="button" class="quiet-button">复制电脑端网址</button>
+          </div>
         </section>
 
         <p class="dialog-note">账号仅用于区分你的云端数据；模型 API 配置会随同一账号同步，API Key 仅保存在该账号的私有云端配置中。</p>
