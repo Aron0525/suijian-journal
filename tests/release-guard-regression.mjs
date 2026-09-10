@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [mobileVersionSource, nativeManifestBuilder, workflow, ciWorkflow, gitignore, androidManifest, readme] = await Promise.all([
+const [mobileVersionSource, nativeManifestBuilder, nativeVersionGuard, serverDeployScript, ciWorkflow, gitignore, androidManifest, readme] = await Promise.all([
   readFile(new URL('../mobile-version.json', import.meta.url), 'utf8'),
   readFile(new URL('../scripts/build-native-update-manifest.mjs', import.meta.url), 'utf8'),
-  readFile(new URL('../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/verify-native-version.mjs', import.meta.url), 'utf8'),
+  readFile(new URL('../scripts/deploy-server.sh', import.meta.url), 'utf8'),
   readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'),
   readFile(new URL('../.gitignore', import.meta.url), 'utf8'),
   readFile(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8'),
@@ -17,24 +18,20 @@ assert.deepEqual(mobileVersion, { versionCode: 8, versionName: '1.1.6' });
 assert.match(nativeManifestBuilder, /const apkInput = option\('--apk'\);/);
 assert.match(nativeManifestBuilder, /缺少 --apk 参数/);
 assert.doesNotMatch(nativeManifestBuilder, /Android-v1\.1\.0\.apk/);
+assert.match(nativeVersionGuard, /Android 原生文件未变化，无需递增版本。/);
+assert.match(nativeVersionGuard, /mobile-version\.json/);
+assert.match(nativeVersionGuard, /current\.versionCode <= previous\.versionCode/);
 
-assert.match(workflow, /fetch-depth: 0/);
-assert.match(workflow, /actions\/checkout@v7/);
-assert.match(workflow, /actions\/setup-node@v7/);
-assert.match(workflow, /actions\/setup-java@v6/);
-assert.match(workflow, /android-actions\/setup-android@v4/);
-assert.match(workflow, /actions\/upload-pages-artifact@v5/);
-assert.match(workflow, /actions\/deploy-pages@v5/);
-assert.match(workflow, /name: Require Android version increment/);
-assert.match(workflow, /BASE_SHA="\$\(git rev-parse HEAD\^ 2>\/dev\/null \|\| true\)"/);
-assert.match(workflow, /\[ "\$BASE_SHA" = '0{40}' \]/);
-assert.match(workflow, /git diff --quiet "\$BASE_SHA" HEAD -- android ios build-android-apk\.sh capacitor\.config\.ts mobile-version\.json/);
-assert.match(workflow, /name\.startsWith\('@capacitor\/'\) \|\| name === '@capgo\/capacitor-updater'/);
-assert.match(workflow, /Android 原生依赖未变化，无需递增版本。/);
-assert.match(workflow, /if node --input-type=module - "\$BASE_SHA" <<'NODE'[\s\S]+?process\.exit\(1\);\s+NODE\s+then\s+exit 0\s+fi/);
-assert.match(workflow, /node --input-type=module - "\$BASE_SHA" <<'NODE'/);
-assert.match(workflow, /current\.versionCode > previous\.versionCode/);
-assert.match(workflow, /node tests\/release-guard-regression\.mjs/);
+assert.match(serverDeployScript, /git diff --quiet/);
+assert.match(serverDeployScript, /npm run check/);
+assert.match(serverDeployScript, /npm test/);
+assert.match(serverDeployScript, /npm run check:native-version/);
+assert.match(serverDeployScript, /npm run build:android/);
+assert.match(serverDeployScript, /rsync -az --delete --delay-updates/);
+assert.match(serverDeployScript, /mv -Tf/);
+assert.match(serverDeployScript, /curl --fail/);
+assert.match(serverDeployScript, /git push origin main/);
+assert.doesNotMatch(serverDeployScript, /deploy-pages|upload-pages-artifact/);
 assert.match(ciWorkflow, /pull_request:/);
 assert.match(ciWorkflow, /actions\/checkout@v7/);
 assert.match(ciWorkflow, /actions\/setup-node@v7/);
