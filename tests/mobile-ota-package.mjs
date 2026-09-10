@@ -27,6 +27,7 @@ assert.match(bundledIndex, /connect-src 'self' https:\/\/\*\.supabase\.co https:
 const { stdout } = await runFile('unzip', ['-Z1', zipPath.pathname]);
 assert.match(stdout, /^index\.html$/m);
 assert.match(stdout, /^app\.js$/m);
+assert.match(stdout, /^admin-export\.js$/m);
 assert.doesNotMatch(stdout, /^updates\//m);
 
 console.log(`Mobile OTA package regression checks passed: ${manifest.version}`);

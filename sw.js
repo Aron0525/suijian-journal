@@ -1,10 +1,11 @@
-const CACHE_NAME = 'suijian-pwa-v52';
-const RELEASE = '20260910-mobile-recovery-v3';
+const CACHE_NAME = 'suijian-pwa-v53';
+const RELEASE = '20260910-admin-export-updater-v4';
 const ASSETS = [
   './',
   './index.html',
   './index.htm',
   './styles.css',
+  `./admin-export.js?release=${RELEASE}`,
   `./app.js?release=${RELEASE}`,
   './manifest.webmanifest',
   './icon.svg',
@@ -47,7 +48,7 @@ self.addEventListener('fetch', (event) => {
   // Journal and auth API responses must never enter Cache Storage: it is shared
   // by all sessions on this device and is not an account-scoped data store.
   if (url.origin !== self.location.origin) return;
-  const appShell = event.request.mode === 'navigate' || /\/(?:index\.html|index\.htm|app\.js|styles\.css|manifest\.webmanifest|icon\.svg|icons\/icon-(?:180|192|512)\.png)$/.test(url.pathname);
+  const appShell = event.request.mode === 'navigate' || /\/(?:index\.html|index\.htm|admin-export\.js|app\.js|styles\.css|manifest\.webmanifest|icon\.svg|icons\/icon-(?:180|192|512)\.png)$/.test(url.pathname);
   if (appShell) {
     event.respondWith(networkFirst(event.request));
   }

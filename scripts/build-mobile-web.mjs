@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 const runFile = promisify(execFile);
 const output = new URL('../dist-mobile/', import.meta.url);
 const outputPath = fileURLToPath(output);
-const files = ['index.html', 'index.htm', 'styles.css', 'app.js', 'sw.js', 'manifest.webmanifest', 'icon.svg'];
+const files = ['index.html', 'index.htm', 'styles.css', 'admin-export.js', 'app.js', 'sw.js', 'manifest.webmanifest', 'icon.svg'];
 // Keep update downloads on the product domain. The repository remains the
 // publishing source, while phones no longer depend on reaching github.io.
 const releaseAssetBaseUrl = 'https://933647.xyz';

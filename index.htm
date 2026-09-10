@@ -605,6 +605,10 @@
             <button id="close-admin-user-detail" type="button" class="quiet-button">返回用户列表</button>
           </div>
           <div class="admin-user-actions">
+            <div class="admin-export-actions" role="group" aria-label="下载当前用户数据">
+              <button id="admin-download-json" type="button" class="quiet-button">下载 JSON</button>
+              <button id="admin-download-excel" type="button" class="quiet-button">下载 Excel</button>
+            </div>
             <button id="admin-send-password-reset" type="button" class="quiet-button">发送重设密码邮件</button>
             <button id="admin-toggle-user-suspension" type="button" class="quiet-button danger-button">停用账号</button>
           </div>
@@ -638,10 +642,6 @@
               <h3 id="admin-model-overview-title">模型配置</h3>
               <div id="admin-model-overview" class="admin-account-overview"></div>
             </section>
-            <details class="admin-raw-data-wrap">
-              <summary>查看服务器原始数据</summary>
-              <pre id="admin-raw-data" class="admin-user-data"></pre>
-            </details>
           </div>
         </section>
       </div>
@@ -712,6 +712,7 @@
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?release=20260910-mobile-recovery-v3" defer></script>
+    <script src="./admin-export.js?release=20260910-admin-export-updater-v4" defer></script>
+    <script src="./app.js?release=20260910-admin-export-updater-v4" defer></script>
   </body>
 </html>

@@ -54,6 +54,14 @@ const NATIVE_APP_UPDATE_MANIFEST_URL = 'https://933647.xyz/native-app-update.jso
 // GitHub redirects it to the current domain without changing the asset path.
 const LEGACY_UPDATE_ORIGIN = 'https://aron0525.github.io';
 const LEGACY_UPDATE_BASE_PATH = '/suijian-journal';
+const MOBILE_OTA_MANIFEST_URLS = Object.freeze([
+  MOBILE_OTA_MANIFEST_URL,
+  `${LEGACY_UPDATE_ORIGIN}${LEGACY_UPDATE_BASE_PATH}/app-update.json`,
+]);
+const NATIVE_APP_UPDATE_MANIFEST_URLS = Object.freeze([
+  NATIVE_APP_UPDATE_MANIFEST_URL,
+  `${LEGACY_UPDATE_ORIGIN}${LEGACY_UPDATE_BASE_PATH}/native-app-update.json`,
+]);
 const REMINDER_SETTINGS_KEY = 'suijian-writing-reminder-v1';
 const DEFAULT_REMINDER_SETTINGS = Object.freeze({ enabled: false, time: '21:30', days: [1, 2, 3, 4, 5, 6, 7], skipDate: '', snoozedUntil: '' });
 let runtimeAiApiKey = '';
@@ -307,6 +315,7 @@ function emptyAdminState() {
     selectedUser: null,
     selectedData: null,
     detailLoading: false,
+    detailError: '',
     error: '',
     permissionError: '',
   };
@@ -322,7 +331,7 @@ const state = {
   archiveJumpDate: '',
   cloud: { session: initialCloudSession, activity: loadCloudActivity(initialCloudSession?.user?.id), syncing: false, syncPromise: null, syncTimer: 0, autoSyncTimer: 0, attachmentsSupported: null, tasksSupported: null, draftsSupported: null, draftsStorageMode: '', backupsSupported: null, aiConfigSupported: null, aiConfigError: '', lastError: '', lastWarning: '', passwordRecovery: false },
   admin: emptyAdminState(),
-  nativeUpdate: { checking: false, timer: 0, readyPromise: null },
+  nativeUpdate: { checking: false, timer: 0, readyPromise: null, status: '' },
   nativeInstaller: { checking: false, timer: 0, manifest: null, installed: null, status: '' },
   backup: { timer: 0 },
   pastedDraft: null,
@@ -525,6 +534,8 @@ const elements = {
   closeAdminUserDetail: document.querySelector('#close-admin-user-detail'),
   adminSendPasswordReset: document.querySelector('#admin-send-password-reset'),
   adminToggleUserSuspension: document.querySelector('#admin-toggle-user-suspension'),
+  adminDownloadJson: document.querySelector('#admin-download-json'),
+  adminDownloadExcel: document.querySelector('#admin-download-excel'),
   adminUserSummary: document.querySelector('#admin-user-summary'),
   adminAccountOverview: document.querySelector('#admin-account-overview'),
   adminEntryList: document.querySelector('#admin-entry-list'),
@@ -533,7 +544,6 @@ const elements = {
   adminTaskList: document.querySelector('#admin-task-list'),
   adminBackupList: document.querySelector('#admin-backup-list'),
   adminModelOverview: document.querySelector('#admin-model-overview'),
-  adminRawData: document.querySelector('#admin-raw-data'),
   periodSummaryDialog: document.querySelector('#period-summary-dialog'),
   closePeriodSummaryDialog: document.querySelector('#close-period-summary-dialog'),
   searchDialog: document.querySelector('#search-dialog'),
@@ -4243,10 +4253,22 @@ function adminAppendRecord(container, { title, date = '', content = '', meta = '
   container.append(article);
 }
 
-function adminReadablePayload(value) {
-  if (value === undefined || value === null) return '';
-  if (typeof value === 'string') return value;
-  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+function adminDraftContent(payload) {
+  if (typeof payload === 'string') return payload;
+  if (!payload || typeof payload !== 'object') return '';
+  return payload.content || payload.text || payload.body || payload.title || '';
+}
+
+function adminEntryMeta(entry) {
+  const tags = Array.isArray(entry?.tags) ? entry.tags.filter(Boolean) : [];
+  const attachments = Array.isArray(entry?.attachments) ? entry.attachments.length : 0;
+  return [
+    entry?.mood ? `心情：${entry.mood}` : '',
+    tags.length ? `标签：${tags.join('、')}` : '',
+    attachments ? `附件：${attachments} 个` : '',
+    entry?.deleted_at ? '已删除' : '',
+    `更新：${adminDateLabel(entry?.updated_at)}`,
+  ].filter(Boolean).join(' · ');
 }
 
 function renderAdminDataSections(data, user) {
@@ -4256,7 +4278,6 @@ function renderAdminDataSections(data, user) {
     elements.adminModelOverview,
   ];
   containers.forEach((container) => container?.replaceChildren());
-  if (elements.adminRawData) elements.adminRawData.textContent = '';
   if (!data || typeof data !== 'object') return;
 
   const credential = user?.credential || {};
@@ -4281,8 +4302,8 @@ function renderAdminDataSections(data, user) {
   entries.forEach((entry) => adminAppendRecord(elements.adminEntryList, {
     title: entry.title || `${entry.entry_date || '未知日期'}的日记`,
     date: entry.entry_date || adminDateLabel(entry.created_at),
-    meta: `更新：${adminDateLabel(entry.updated_at)}${entry.deleted_at ? ' · 已删除' : ''}`,
-    content: [entry.content, entry.original_content ? `\n原始内容：\n${entry.original_content}` : '', entry.attachments?.length ? `\n附件记录：\n${adminReadablePayload(entry.attachments)}` : ''].filter(Boolean).join('\n'),
+    meta: adminEntryMeta(entry),
+    content: entry.content || '',
   }));
   if (!entries.length) adminAppendEmpty(elements.adminEntryList);
 
@@ -4291,7 +4312,7 @@ function renderAdminDataSections(data, user) {
     title: `${draft.draft_date || '未知日期'}的草稿`,
     date: adminDateLabel(draft.updated_at),
     meta: draft.deleted_at ? '已删除草稿' : '服务器草稿',
-    content: adminReadablePayload(draft.payload),
+    content: adminDraftContent(draft.payload),
   }));
   if (!drafts.length) adminAppendEmpty(elements.adminDraftList);
 
@@ -4314,29 +4335,57 @@ function renderAdminDataSections(data, user) {
   const backups = Array.isArray(data.backups) ? data.backups : [];
   const attachments = Array.isArray(data.attachments) ? data.attachments : [];
   backups.forEach((backup) => adminAppendRecord(elements.adminBackupList, {
-    title: `${backup.backup_date || '未知日期'} · 云端备份`, date: adminDateLabel(backup.created_at), content: adminReadablePayload(backup.payload),
+    title: `${backup.backup_date || '未知日期'} · 云端备份`, date: adminDateLabel(backup.created_at),
+    meta: backup.payload && typeof backup.payload === 'object' ? '完整账号数据快照' : '备份记录',
   }));
   attachments.forEach((attachment) => adminAppendRecord(elements.adminBackupList, {
     title: attachment.name || attachment.path || '附件', date: adminDateLabel(attachment.updated_at || attachment.created_at),
     meta: [attachment.metadata?.mimetype, attachment.metadata?.size ? `${attachment.metadata.size} 字节` : ''].filter(Boolean).join(' · '),
-    content: attachment.path || '',
+    content: '',
   }));
   if (!backups.length && !attachments.length) adminAppendEmpty(elements.adminBackupList);
 
   const aiSettings = data.ai_settings;
   if (aiSettings?.config) {
-    Object.entries(aiSettings.config).forEach(([key, value]) => adminAppendField(elements.adminModelOverview, key, adminReadablePayload(value)));
+    const config = aiSettings.config;
+    adminAppendField(elements.adminModelOverview, '接口类型', config.interfaceType || config.interface_type || 'OpenAI 兼容 API');
+    adminAppendField(elements.adminModelOverview, '平台', config.provider || config.platform || '自定义');
+    adminAppendField(elements.adminModelOverview, '模型', config.model);
+    adminAppendField(elements.adminModelOverview, 'API 地址', config.endpoint);
+    adminAppendField(elements.adminModelOverview, 'AI 整理提示词', config.organizePrompt || config.organize_prompt ? '已配置' : '使用默认提示词');
+    adminAppendField(elements.adminModelOverview, 'AI 汇总提示词', config.summaryPrompt || config.summary_prompt ? '已配置' : '使用默认提示词');
     adminAppendField(elements.adminModelOverview, 'API Key', aiSettings.api_key_configured ? '已配置（密钥内容已隐藏）' : '未配置');
   } else {
     adminAppendEmpty(elements.adminModelOverview, '服务器中没有模型配置。');
   }
-  if (elements.adminRawData) elements.adminRawData.textContent = JSON.stringify({ user, data }, null, 2);
+}
+
+function downloadSelectedAdminUser(format) {
+  const user = state.admin.selectedUser;
+  const data = state.admin.selectedData;
+  const exporter = globalThis.SuijianAdminExport;
+  if (!user || !data || !exporter) {
+    showToast('请等待当前用户数据读取完成');
+    return;
+  }
+  try {
+    const output = format === 'excel'
+      ? exporter.createExcelExport(user, data)
+      : exporter.createJsonExport(user, data);
+    const content = format === 'excel' ? output.bytes : output.text;
+    downloadBlob(new Blob([content], { type: output.mimeType }), output.fileName);
+    showToast(format === 'excel' ? 'Excel 表格已生成' : 'JSON 原始数据已生成');
+  } catch (error) {
+    console.error('Admin user export failed', error);
+    showToast('用户数据导出失败，请重试');
+  }
 }
 
 function clearAdminUserDetail({ renderPanel = true } = {}) {
   state.admin.selectedUser = null;
   state.admin.selectedData = null;
   state.admin.detailLoading = false;
+  state.admin.detailError = '';
   if (renderPanel) renderAdminPanel();
 }
 
@@ -4416,7 +4465,7 @@ function renderAdminPanel() {
   elements.adminUserDetailTitle.textContent = user.email || '未提供邮箱';
   elements.adminUserSummary.textContent = admin.detailLoading
     ? '正在读取此用户的日记、汇总、待办、附件目录和备份…'
-    : adminUserDataSummary(admin.selectedData);
+    : (admin.detailError ? `用户数据读取失败：${admin.detailError}` : adminUserDataSummary(admin.selectedData));
   renderAdminDataSections(admin.detailLoading ? null : admin.selectedData, user);
   const suspended = Boolean(user.banned_until);
   elements.adminToggleUserSuspension.textContent = suspended ? '恢复账号' : '停用账号';
@@ -4424,6 +4473,8 @@ function renderAdminPanel() {
   const isCurrentUser = user.id === state.cloud.session?.user?.id;
   elements.adminSendPasswordReset.disabled = admin.detailLoading || isCurrentUser;
   elements.adminToggleUserSuspension.disabled = admin.detailLoading || isCurrentUser;
+  if (elements.adminDownloadJson) elements.adminDownloadJson.disabled = admin.detailLoading || !admin.selectedData;
+  if (elements.adminDownloadExcel) elements.adminDownloadExcel.disabled = admin.detailLoading || !admin.selectedData;
 }
 
 async function adminRequest(action, { method = 'GET', query = {}, body = null, retry = true } = {}) {
@@ -4511,6 +4562,7 @@ async function openAdminUser(userId) {
   state.admin.selectedUser = selectedUser;
   state.admin.selectedData = null;
   state.admin.detailLoading = true;
+  state.admin.detailError = '';
   renderAdminPanel();
   try {
     const payload = await adminRequest('user', { query: { user_id: userId } });
@@ -4519,7 +4571,8 @@ async function openAdminUser(userId) {
     state.admin.selectedData = payload?.data || {};
   } catch (error) {
     if (state.admin.selectedUser?.id !== userId) return;
-    state.admin.selectedData = { error: error instanceof Error ? error.message : '未知错误' };
+    state.admin.selectedData = null;
+    state.admin.detailError = error instanceof Error ? error.message : '未知错误';
   } finally {
     if (state.admin.selectedUser?.id === userId) state.admin.detailLoading = false;
     renderAdminPanel();
@@ -5885,10 +5938,24 @@ async function installedNativeAppInfo() {
       versionName: typeof info?.version === 'string' ? info.version : '',
       versionCode: Number.isSafeInteger(versionCode) && versionCode > 0 ? versionCode : 0,
     };
-  } catch {
+  } catch (error) {
     // Older native shells may not contain the App plugin. They can still open the installer link.
-    return null;
+    return { versionName: '', versionCode: 0, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+async function fetchUpdateManifest(urls, label) {
+  const failures = [];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return { manifest: await response.json(), manifestUrl: url };
+    } catch (error) {
+      failures.push(`${new URL(url).host}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  throw new Error(`${label}请求失败（${failures.join('；')}）`);
 }
 
 function isTrustedReleaseAsset(url, expectedPath, manifestUrl) {
@@ -5927,11 +5994,12 @@ function renderMobileAppUpdatePanel() {
   const { installed, manifest, status, checking } = state.nativeInstaller;
   elements.mobileAppVersion.textContent = installed?.versionName
     ? `当前 v${installed.versionName}`
-    : '当前版本待确认';
+    : (installed?.error ? '当前版本读取失败' : '正在读取当前版本');
   elements.downloadMobileUpdate.hidden = !hasNativeInstallerUpdate();
+  const failureStatus = [state.nativeUpdate.status, status].filter((value) => value?.includes('失败')).join('；');
   elements.mobileAppUpdateStatus.textContent = checking
     ? '正在检查网页内容和 Android 安装包更新…'
-    : (status || (manifest
+    : (failureStatus || status || state.nativeUpdate.status || (manifest
       ? `网页内容会自动更新；Android 原生版本 v${manifest.versionName} 已是最新。`
       : '网页内容会在启动、回到前台、网络恢复和每 10 分钟自动检查更新。'));
 }
@@ -5941,14 +6009,11 @@ async function checkNativeInstallerUpdate({ quiet = true } = {}) {
   state.nativeInstaller.checking = true;
   renderMobileAppUpdatePanel();
   try {
-    const [installed, response] = await Promise.all([
-      installedNativeAppInfo(),
-      fetch(NATIVE_APP_UPDATE_MANIFEST_URL, { cache: 'no-store' }),
-    ]);
-    if (!response.ok) throw new Error(`安装包更新清单请求失败：${response.status}`);
-    const manifest = await response.json();
+    // Save native version first: a network error must not erase a successful App.getInfo() result.
+    state.nativeInstaller.installed = await installedNativeAppInfo();
+    renderMobileAppUpdatePanel();
+    const { manifest } = await fetchUpdateManifest(NATIVE_APP_UPDATE_MANIFEST_URLS, '安装包更新清单');
     if (!isTrustedNativeInstallerUpdate(manifest)) throw new Error('安装包更新清单格式无效');
-    state.nativeInstaller.installed = installed;
     state.nativeInstaller.manifest = manifest;
     state.nativeInstaller.status = hasNativeInstallerUpdate()
       ? `发现 Android v${manifest.versionName}。下载后由 Android 系统确认安装；日记先同步即可保留。`
@@ -5956,8 +6021,9 @@ async function checkNativeInstallerUpdate({ quiet = true } = {}) {
     if (!quiet) showToast(hasNativeInstallerUpdate() ? `发现 Android v${manifest.versionName} 安装包` : 'Android App 已是最新版本');
     return manifest;
   } catch (error) {
-    state.nativeInstaller.status = '安装包更新暂时无法检查；网页自动更新不受影响。';
-    if (!quiet) showToast('安装包更新检查失败，请稍后重试');
+    const message = error instanceof Error ? error.message : String(error);
+    state.nativeInstaller.status = `安装包更新检查失败：${message}`;
+    if (!quiet) showToast('安装包更新检查失败，详情已显示');
     console.info('Native installer update check skipped', error instanceof Error ? error.message : error);
     return null;
   } finally {
@@ -6025,19 +6091,19 @@ async function checkNativeAppUpdate({ quiet = true, applyImmediately = false } =
   state.nativeUpdate.checking = true;
   try {
     await notifyNativeBundleReady(updater);
-    const response = await fetch(MOBILE_OTA_MANIFEST_URL, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`更新清单请求失败：${response.status}`);
-    const manifest = await response.json();
+    const { manifest } = await fetchUpdateManifest(MOBILE_OTA_MANIFEST_URLS, '网页内容更新清单');
     if (!isTrustedMobileUpdate(manifest)) throw new Error('更新清单格式无效');
 
     const [current, pending] = await Promise.all([updater.current(), updater.getNextBundle()]);
     if ([current?.bundle?.version, pending?.version].includes(manifest.version)) {
+      state.nativeUpdate.status = '';
       if (!quiet) showToast('网页内容已经是最新版');
       return { available: false };
     }
 
     const bundle = await updater.download({ url: manifest.url, version: manifest.version, checksum: manifest.checksum });
     await updater.next({ id: bundle.id });
+    state.nativeUpdate.status = '';
     // Cold-start updates should become active before the user starts writing.
     if (applyImmediately) {
       await updater.reload();
@@ -6047,9 +6113,13 @@ async function checkNativeAppUpdate({ quiet = true, applyImmediately = false } =
     return { available: true };
   } catch (error) {
     // 保留当前已验证的本地版本；下次启动、回到前台或定时检查时会重试。
-    console.info('Mobile update check skipped', error instanceof Error ? error.message : error);
+    const message = error instanceof Error ? error.message : String(error);
+    state.nativeUpdate.status = `网页内容更新检查失败：${message}`;
+    if (!quiet) showToast('网页内容更新检查失败，详情已显示');
+    console.info('Mobile update check skipped', message);
   } finally {
     state.nativeUpdate.checking = false;
+    renderMobileAppUpdatePanel();
   }
 }
 
@@ -6119,6 +6189,8 @@ function bindEvents() {
   elements.closeAdminUserDetail?.addEventListener('click', () => clearAdminUserDetail());
   elements.adminSendPasswordReset?.addEventListener('click', () => void sendAdminPasswordReset());
   elements.adminToggleUserSuspension?.addEventListener('click', () => void toggleAdminUserSuspension());
+  elements.adminDownloadJson?.addEventListener('click', () => downloadSelectedAdminUser('json'));
+  elements.adminDownloadExcel?.addEventListener('click', () => downloadSelectedAdminUser('excel'));
   elements.copyDesktopAppUrl.addEventListener('click', copyDesktopAppUrl);
   elements.checkMobileUpdate.addEventListener('click', () => void checkMobileUpdatesManually());
   elements.downloadMobileUpdate.addEventListener('click', openNativeInstallerDownload);
@@ -6357,6 +6429,6 @@ if (!redirectFilePreviewToPublishedApp()) {
   initializeCloudSync();
 
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260910-mobile-recovery-v3'));
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js?release=20260910-admin-export-updater-v4'));
   }
 }

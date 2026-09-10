@@ -12,7 +12,7 @@ const [mobileVersionSource, nativeManifestBuilder, workflow, ciWorkflow, gitigno
 ]);
 
 const mobileVersion = JSON.parse(mobileVersionSource);
-assert.deepEqual(mobileVersion, { versionCode: 7, versionName: '1.1.5' });
+assert.deepEqual(mobileVersion, { versionCode: 8, versionName: '1.1.6' });
 
 assert.match(nativeManifestBuilder, /const apkInput = option\('--apk'\);/);
 assert.match(nativeManifestBuilder, /缺少 --apk 参数/);
