@@ -19,6 +19,12 @@ assert.match(nativeManifestBuilder, /缺少 --apk 参数/);
 assert.doesNotMatch(nativeManifestBuilder, /Android-v1\.1\.0\.apk/);
 
 assert.match(workflow, /fetch-depth: 0/);
+assert.match(workflow, /actions\/checkout@v7/);
+assert.match(workflow, /actions\/setup-node@v7/);
+assert.match(workflow, /actions\/setup-java@v6/);
+assert.match(workflow, /android-actions\/setup-android@v4/);
+assert.match(workflow, /actions\/upload-pages-artifact@v5/);
+assert.match(workflow, /actions\/deploy-pages@v5/);
 assert.match(workflow, /name: Require Android version increment/);
 assert.match(workflow, /BASE_SHA="\$\(git rev-parse HEAD\^ 2>\/dev\/null \|\| true\)"/);
 assert.match(workflow, /\[ "\$BASE_SHA" = '0{40}' \]/);
@@ -30,6 +36,8 @@ assert.match(workflow, /node --input-type=module - "\$BASE_SHA" <<'NODE'/);
 assert.match(workflow, /current\.versionCode > previous\.versionCode/);
 assert.match(workflow, /node tests\/release-guard-regression\.mjs/);
 assert.match(ciWorkflow, /pull_request:/);
+assert.match(ciWorkflow, /actions\/checkout@v7/);
+assert.match(ciWorkflow, /actions\/setup-node@v7/);
 assert.match(ciWorkflow, /npm run check/);
 assert.match(ciWorkflow, /npm test/);
 
